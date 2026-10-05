@@ -1,5 +1,7 @@
 # CONTEXT.md — Sistema RAG de Produção: Andrade Advogados
 
+> **Revisão de prontidão em 05/10/2026:** consultar o [parecer de preparação dos dados](docs/AUDITORIA_PREPARACAO_RAG_2026-10-05.md) antes de executar as Etapas 2–4. As contagens 287/944/61 foram confirmadas, mas a validação humana não está registrada e há lacunas de preservação de QA, cobertura de quase-duplicatas, identidade de indexação e fidelidade do parsing. As afirmações técnicas abaixo sobre garantia de numeração, busca exata e prontidão devem ser lidas com as correções do parecer. As políticas de escopo permanecem vigentes; a revisão não implementou o pipeline nem liberou o corpus para produção.
+
 > **Fonte Única de Verdade (Single Source of Truth) para Agentes de IA e Desenvolvedores.**  
 > Este documento define a natureza jurídica, arquitetura de software, restrições operacionais, modelos de dados e guardrails mandatórios do sistema RAG em desenvolvimento para o escritório **Andrade Advogados**.
 
