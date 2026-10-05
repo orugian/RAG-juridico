@@ -164,5 +164,70 @@ def test_cache_stats_calculation(cache: ResponseCache):
     assert stats["hit_rate"] == pytest.approx(0.75, rel=1e-2)
 
 
+def run_demo():
+    """Execução demonstrativa passo a passo do cache (visualização CLI)."""
+    print("\n=== CACHE DEMO ===\n")
+
+    # Inicializa o cache com TTL de 3 segundos para teste de expiração
+    demo_cache = ResponseCache(ttl_seconds=3)
+
+    query = "Qual o valor do pró-labore mensal fixado no contrato da Construtora Rocha Ltda?"
+    response = "Conforme a Cláusula 4ª do Contrato nº 114/2024, o valor pró-labore mensal é de R$ 18.500,00."
+
+    # 1. Primeira consulta (miss)
+    res1 = demo_cache.get(query)
+    print(f"1. First lookup: {res1}  (miss - nothing cached yet)")
+
+    # 2. Armazena no cache
+    demo_cache.set(query, response)
+    print("2. Stored response in cache")
+
+    # 3. Segunda consulta idêntica (HIT!)
+    res2 = demo_cache.get(query)
+    print(f"3. Second lookup: {res2}  (HIT!)")
+
+    # 4. Consulta em minúsculas com espaços extras (HIT - case insensitive!)
+    res3 = demo_cache.get(query.lower() + "   ")
+    print(f"4. Lowercase lookup: {res3}  (HIT - case insensitive!)")
+
+    # 5. Consulta diferente (miss)
+    diff_query = "Qual o percentual de honorários de êxito na ação rescisória?"
+    res4 = demo_cache.get(diff_query)
+    print(f"5. Different query: {res4}  (miss)")
+
+    # 6. Estatísticas intermediárias
+    s = demo_cache.stats
+    stats_formatted = {
+        "hits": s["hits"],
+        "misses": s["misses"],
+        "hit_rate": f"{s['hit_rate'] * 100:.1f}%",
+        "cached_entries": s["cached_entries"],
+    }
+    print(f"6. Stats: {stats_formatted}")
+
+    # 7. Aguarda expiração por TTL
+    wait_time = 4
+    print(f"7. Waiting {wait_time} seconds for TTL expiration...")
+    time.sleep(wait_time)
+
+    # 8. Consulta após expiração (miss)
+    res5 = demo_cache.get(query)
+    print(f"8. After TTL: {res5}  (miss - expired!)")
+
+    # 9. Estatísticas finais
+    s_final = demo_cache.stats
+    final_stats_formatted = {
+        "hits": s_final["hits"],
+        "misses": s_final["misses"],
+        "hit_rate": f"{s_final['hit_rate'] * 100:.1f}%",
+        "cached_entries": s_final["cached_entries"],
+    }
+    print(f"9. Final stats: {final_stats_formatted}\n")
+
+
 if __name__ == "__main__":
+    run_demo()
+    print("=" * 60)
+    print("Executando testes automatizados com pytest:\n")
     pytest.main([__file__, "-v"])
+

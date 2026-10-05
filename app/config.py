@@ -2,6 +2,7 @@
     Use pydantic-settings for validated environment variables    It will load variables from .env file and validate them
 """
 from pathlib import Path
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -24,6 +25,29 @@ class Settings(BaseSettings):
     rate_limit: str = "20/minute"
     cache_ttl_seconds: int = 300
     max_retries: int = 3
+
+    # M-Files (M4Law) - fonte documental do RAG
+    mfiles_base_url: str = "https://andrade.cloudvault.m-files.com/REST"
+    mfiles_vault_guid: str = ""
+    mfiles_username: str = ""
+    mfiles_password: SecretStr = SecretStr("")
+    mfiles_timeout_seconds: float = 60.0
+    mfiles_sync_classes: list[str] = [
+        "Contrato",
+        "Acordo",
+        "Acordo Extrajudicial",
+        "Proposta / Orçamento",
+        "Documento",
+    ]
+    raw_data_dir: Path = _PROJECT_ROOT / "data" / "raw"
+
+    # Curadoria do corpus (Etapa 1) - classificador Jev via OpenRouter Decisions API
+    curation_dir: Path = _PROJECT_ROOT / "data" / "curation"
+    jev_model: str = "typesafe/jev-1.13"
+    jev_decisions_url: str = "https://openrouter.ai/api/alpha/decisions"
+    # Snapshot sobre o qual os limiares da curadoria foram calibrados. Resposta de outro snapshot
+    # vira opinião consultiva (não decide sozinha) até nova calibração.
+    jev_calibrated_snapshot: str = "typesafe/jev-1.13-20260917"
 
     model_config = {"env_file": _PROJECT_ROOT / ".env", "extra": "ignore"}
 

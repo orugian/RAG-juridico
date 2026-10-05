@@ -8,3 +8,7 @@ wheels/
 .env
 # Virtual environments
 .venv
+
+# Data / RAG artifacts
+data/
+m-files/acesso.md

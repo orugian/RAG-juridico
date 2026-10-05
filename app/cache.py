@@ -66,6 +66,7 @@ class ResponseCache:
             "misses": self._misses,
             "total": total,
             "hit_rate": hit_rate,
+            "cached_entries": len(self._cache),
         }
 
     def clear(self) -> None:

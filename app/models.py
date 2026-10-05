@@ -14,7 +14,7 @@ class ChatRequest(BaseModel):
 
     message: str = Field(
         ...,
-        min_lenght=1, # First line of defense
+        min_length=1, # First line of defense
         max_length=10000, # Second line of defense
         description="The use's message to the agent"
     )
