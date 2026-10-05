@@ -233,13 +233,18 @@ def _base_row(record: dict[str, Any], raw_dir: Path) -> dict[str, Any]:
     ordered = sorted(record.get("files", []), key=lambda f: f["id"])  # ordem da API não é garantida
     files = [_file_entry(f, raw_dir) for f in ordered] if record.get("status") == "ok" else []
     primary = next((f for f in files if f["parseable"]), files[0] if files else None)
+    if primary:
+        file_hashes = "+".join(f["sha256"][:16] for f in files) if len(files) > 1 else primary["sha256"][:16]
+        doc_key = f"{record['mfiles_id']}@{record['mfiles_version']}:{file_hashes}:r{RULES_VERSION}"
+    else:
+        doc_key = None
     return {
         "schema_version": SCHEMA_VERSION,
         "rules_version": RULES_VERSION,
         "mfiles_id": record["mfiles_id"],
         "mfiles_version": record["mfiles_version"],
-        # Chave estável de upsert no índice: muda se a versão M-Files ou o conteúdo mudarem.
-        "doc_key": f"{record['mfiles_id']}@{record['mfiles_version']}:{primary['sha256'][:16]}" if primary else None,
+        # Chave estável de upsert no índice: muda se a versão M-Files, arquivos ou regras mudarem.
+        "doc_key": doc_key,
         "title": record["title"],
         "class_id": record["class_id"],
         "class_name": record["class_name"],
@@ -523,8 +528,8 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows({k: _csv_safe(v) for k, v in row.items()} for row in rows)
 
 
-def _previous_human_input(path: Path) -> dict[tuple[int, int], dict[str, str]]:
-    """Preserva o que o revisor já digitou no review_queue.csv anterior (mesmo documento e versão)."""
+def _previous_human_input(path: Path) -> dict[Any, dict[str, str]]:
+    """Preserva o que o revisor já digitou no review_queue.csv ou qa_sample.csv anterior (mesmo documento e versão)."""
     if not path.exists():
         return {}
     try:
@@ -534,8 +539,12 @@ def _previous_human_input(path: Path) -> dict[tuple[int, int], dict[str, str]]:
                               "Feche-o e rode a curadoria novamente.") from exc
     kept = {}
     for row in rows:
-        if any(row.get(col) for col in HUMAN_COLUMNS) and row.get("mfiles_id", "").isdigit() and row.get("versao", "").isdigit():
-            kept[(int(row["mfiles_id"]), int(row["versao"]))] = {col: row.get(col, "") for col in HUMAN_COLUMNS}
+        if any(row.get(col) for col in HUMAN_COLUMNS) and row.get("mfiles_id", "").isdigit():
+            cols = {col: row.get(col, "") for col in HUMAN_COLUMNS}
+            mid = int(row["mfiles_id"])
+            if row.get("versao", "").isdigit():
+                kept[(mid, int(row["versao"]))] = cols
+            kept[mid] = cols
     return kept
 
 
@@ -583,15 +592,19 @@ def write_outputs(
     """Grava tudo em .tmp e só então substitui; summary.json é gravado por último (marcador de commit)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     human = _previous_human_input(out_dir / REVIEW_FILE)
+    human_qa = _previous_human_input(out_dir / QA_FILE)
     review = sorted((r for r in rows if r["decision"] == Decision.REVIEW.value),
                     key=lambda r: (review_priority(r), (r["family"] or {}).get("id", ""), r["mfiles_id"]))
 
     tmp = {name: out_dir / f"{name}.tmp" for name in (CURATION_FILE, REVIEW_FILE, QA_FILE, SUMMARY_FILE)}
     tmp[CURATION_FILE].write_text("".join(json.dumps(r, ensure_ascii=False, sort_keys=True) + "\n" for r in rows),
                                   encoding="utf-8")
-    _write_csv(tmp[REVIEW_FILE], [_review_row(r, review_priority(r), human.get((r["mfiles_id"], r["mfiles_version"])))
+    _write_csv(tmp[REVIEW_FILE], [_review_row(r, review_priority(r),
+                                              human.get((r["mfiles_id"], r["mfiles_version"])) or human.get(r["mfiles_id"]))
                                   for r in review])
-    _write_csv(tmp[QA_FILE], [_review_row(r, "controle_qualidade") for r in qa_sample(rows, cfg)])
+    _write_csv(tmp[QA_FILE], [_review_row(r, "controle_qualidade",
+                                          human_qa.get((r["mfiles_id"], r["mfiles_version"])) or human_qa.get(r["mfiles_id"]))
+                              for r in qa_sample(rows, cfg)])
 
     known = {r["mfiles_id"] for r in rows}
     unknown_overrides = sorted(set(overrides or {}) - known)
@@ -659,8 +672,10 @@ def _load_rows(curation_dir: Path, raw_dir: Path, verify_files: bool) -> list[di
             continue
         if manifest.get(r["mfiles_id"], {}).get("mfiles_version") != r["mfiles_version"]:
             raise CurationStaleError(f"Documento {r['mfiles_id']} divergente do manifest.")
-        if verify_files and _sha256(raw_dir / r["file"]["path"]) != r["file"]["sha256"]:
-            raise CurationStaleError(f"Arquivo do documento {r['mfiles_id']} foi alterado em disco.")
+        if verify_files:
+            target_files = r.get("files") or ([r["file"]] if r.get("file") else [])
+            if any(_sha256(raw_dir / f["path"]) != f["sha256"] for f in target_files):
+                raise CurationStaleError(f"Arquivo do documento {r['mfiles_id']} foi alterado em disco.")
     return rows
 
 

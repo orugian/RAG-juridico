@@ -104,6 +104,30 @@ def test_content_near_dup_same_parties_is_family_but_other_parties_are_distinct(
     assert all(rows[i]["flags"]["near_dup_checked"] for i in (1, 2, 3))
 
 
+def test_same_instrument_empty_parties_requires_higher_threshold():
+    from app.ingestion.near_dup import Fingerprint, same_instrument
+    common = frozenset(f"word_{i}" for i in range(90))
+    a_shingles = common | frozenset(f"a_{i}" for i in range(10))
+    b_shingles = common  # jaccard = 90 / 100 = 0.90
+
+    fp_a = Fingerprint(shingles=a_shingles, parties=frozenset())
+    fp_b = Fingerprint(shingles=b_shingles, parties=frozenset())
+
+    # Com threshold 0.85, mas sem partes identificadas, 0.90 não atinge 0.95 -> False
+    assert not same_instrument(fp_a, fp_b, threshold=0.85)
+
+    # Com partes idênticas identificadas, 0.90 >= 0.85 -> True
+    fp_a_parties = Fingerprint(shingles=a_shingles, parties=frozenset({"11122233344"}))
+    fp_b_parties = Fingerprint(shingles=b_shingles, parties=frozenset({"11122233344"}))
+    assert same_instrument(fp_a_parties, fp_b_parties, threshold=0.85)
+
+    # Com partes ausentes mas similaridade quase idêntica (>= 0.95) -> True
+    high_common = frozenset(f"w_{i}" for i in range(98))
+    fp_high_a = Fingerprint(shingles=high_common | frozenset({"extra_a"}), parties=frozenset())
+    fp_high_b = Fingerprint(shingles=high_common | frozenset({"extra_b"}), parties=frozenset())
+    assert same_instrument(fp_high_a, fp_high_b, threshold=0.85)
+
+
 def test_title_marker_family_without_final_has_no_suggestion(tmp_path):
     raw = tmp_path / "raw"
     folder = {"Caminho original (1/3)": "C:\\AACloud\\Consultivo\\Contratos\\Fornecimento\\a.doc|"}
@@ -140,6 +164,19 @@ def test_multi_file_and_encrypted_pdf_go_to_review(tmp_path):
     rows = _by_id(curate([multi, enc], raw, None))
     assert rows[1]["decision"] == "review" and "MULTI_FILE" in rows[1]["reasons"] and len(rows[1]["files"]) == 2
     assert rows[2]["decision"] == "review" and "ENCRYPTED_PDF" in rows[2]["reasons"]
+
+
+def test_doc_key_incorporates_secondary_files_and_rules_version(tmp_path):
+    raw = tmp_path / "raw"
+    multi = _doc(raw, 1, "Contrato de Mútuo")
+    extra = dict(multi["files"][0], id=99, path="files/1/99_v1.docx")
+    _docx(raw / extra["path"])
+    multi["files"].append(extra)
+    row = curate([multi], raw, None)[0]
+
+    f1_hash = row["files"][0]["sha256"][:16]
+    f2_hash = row["files"][1]["sha256"][:16]
+    assert row["doc_key"] == f"1@1:{f1_hash}+{f2_hash}:r{cur.RULES_VERSION}"
 
 
 def test_possible_template_without_client_goes_to_review(tmp_path):
@@ -231,6 +268,27 @@ def test_review_queue_preserves_human_input_between_runs(corpus, tmp_path):
     assert next(l for l in again.splitlines() if ";80;" in l).endswith(";exclude;;rdib;tela")
 
 
+def test_qa_sample_preserves_human_annotations_across_reruns(corpus, tmp_path):
+    raw, records = corpus
+    out = tmp_path / "c"
+    rows = curate(records, raw, None)
+    write_outputs(rows, out, raw, CFG, None)
+    text = (out / cur.QA_FILE).read_text(encoding="utf-8-sig")
+    lines = [l for l in text.splitlines() if l and not l.startswith("prioridade")]
+    assert len(lines) > 0, "qa_sample.csv deve conter linhas amostradas"
+    target_line = lines[0]
+    target_id = target_line.split(";")[2]
+    assert target_line.endswith(";;;;")
+
+    annotated = target_line[:-4] + ";include;instrumento_contratual;auditor_qa;validado_amostra"
+    (out / cur.QA_FILE).write_text(text.replace(target_line, annotated), encoding="utf-8-sig")
+
+    write_outputs(curate(records, raw, None), out, raw, CFG, None)
+    again = (out / cur.QA_FILE).read_text(encoding="utf-8-sig")
+    again_line = next(l for l in again.splitlines() if f";{target_id};" in l)
+    assert again_line.endswith(";include;instrumento_contratual;auditor_qa;validado_amostra")
+
+
 def test_locked_output_raises_clear_error(corpus, tmp_path, monkeypatch):
     raw, records = corpus
     original = Path.replace
@@ -274,6 +332,27 @@ def test_load_curated_detects_modified_file_and_interrupted_write(corpus, tmp_pa
     with (out / cur.CURATION_FILE).open("a", encoding="utf-8") as fh:
         fh.write("{}\n")
     with pytest.raises(CurationStaleError, match="summary"):
+        load_curated(out, raw)
+
+
+def test_load_curated_detects_secondary_file_modification(tmp_path):
+    raw = tmp_path / "raw"
+    multi = _doc(raw, 1, "Contrato de Mútuo")
+    extra = dict(multi["files"][0], id=99, path="files/1/99_v1.docx")
+    _docx(raw / extra["path"])
+    extra_data = (raw / extra["path"]).read_bytes()
+    extra.update(sha256=hashlib.sha256(extra_data).hexdigest(), size=len(extra_data))
+    multi["files"].append(extra)
+    from app.ingestion.sync import write_manifest
+    write_manifest(raw, [multi])
+    overrides = {1: {"mfiles_id": 1, "mfiles_version": 1, "decision": "include",
+                     "category": "instrumento_contratual", "reviewed_by": "auditor", "notes": ""}}
+    out = tmp_path / "c"
+    write_outputs(curate([multi], raw, None, overrides), out, raw, CFG, None, overrides)
+    assert load_curated(out, raw)
+
+    (raw / extra["path"]).write_bytes(b"PK\x03\x04alterado_secundario")
+    with pytest.raises(CurationStaleError, match="alterado em disco"):
         load_curated(out, raw)
 
 

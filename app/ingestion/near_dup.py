@@ -66,13 +66,18 @@ def fingerprint(path: Path) -> Optional[Fingerprint]:
     return None if text is None else Fingerprint(shingles(text), party_ids(text))
 
 
-def same_instrument(a: Fingerprint, b: Fingerprint, threshold: float) -> bool:
+def same_instrument(a: Fingerprint, b: Fingerprint, threshold: float, empty_parties_threshold: float = 0.95) -> bool:
     """
     Versões do mesmo instrumento: texto quase idêntico E mesmas partes (ou partes ainda não preenchidas).
     Texto quase idêntico com CPFs/CNPJs diferentes = o mesmo modelo usado para partes distintas.
+    Se ambas as partes estão ausentes (not a.parties and not b.parties), exige similaridade mais estrita
+    (empty_parties_threshold) para evitar falsos positivos entre minutas não preenchidas de clientes distintos.
     """
-    if jaccard(a.shingles, b.shingles) < threshold:
+    sim = jaccard(a.shingles, b.shingles)
+    if sim < threshold:
         return False
+    if not a.parties and not b.parties:
+        return sim >= empty_parties_threshold
     return a.parties == b.parties or not a.parties or not b.parties
 
 
