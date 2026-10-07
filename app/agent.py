@@ -8,7 +8,7 @@ Features:
 - End-to-end tracing via LangSmith.
 """
 
-import os
+from functools import lru_cache
 from typing import Optional
 from typing_extensions import Annotated, TypedDict
 from langgraph.graph import StateGraph, START, END
@@ -20,11 +20,9 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
-from langsmith import traceable
+from app.telemetry import safe_trace, error_category, assert_callback_boundary
 
 from app.config import get_settings
-
-settings = get_settings()
 
 SYSTEM_PROMPT = """Você é o Assistente Especialista em Contratos do escritório Andrade Advogados.
 Sua função exclusiva é atuar como auditor e consultor do acervo contratual da banca jurídica.
@@ -39,7 +37,7 @@ DIRETRIZES FUNDAMENTAIS (CONTEXT.MD):
 2. REGRA DOS 4 ELEMENTOS DE CITAÇÃO (OBRIGATÓRIO):
    Sempre que citar uma regra contratual, forneça:
    a) Identificador do Contrato (Nome, número ou proposta).
-   b) Partes Qualificadas (Contratante e Contratada Andrade Advogados).
+   b) Partes Qualificadas e seus papéis efetivamente documentados.
    c) Localização Exata (Cláusula, parágrafo, inciso ou anexo).
    d) Transcrição Literal do Trecho-Chave (em destaque ou aspas).
 
@@ -68,29 +66,31 @@ class ProductionAgent:
     - LangSmith tracing
     """
 
-    def __init__(self):
-        openai_base_url = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-
-        self.llm_primary = ChatOpenAI(
-            model=settings.primary_llm_model,
-            api_key=settings.openai_api_key,
-            base_url=openai_base_url,
-            temperature=0,
-            timeout=30,
-            max_retries=settings.max_retries,
-        )
-
-        self.fallback_llm = ChatOpenAI(
-            model=settings.fallback_llm_model,
-            api_key=settings.openai_api_key,
-            base_url=openai_base_url,
-            temperature=0,
-            timeout=30,
-            max_retries=settings.max_retries,
-        )
-
-        self.max_retries = settings.max_retries
+    def __init__(self, *, primary=None, fallback=None, settings=None):
+        self.settings = settings or get_settings()
+        self.llm_primary = primary
+        self.fallback_llm = fallback
+        self.max_retries = self.settings.max_retries
         self.graph = self._build_graph()
+
+    def _provider(self, fallback=False):
+        existing = self.fallback_llm if fallback else self.llm_primary
+        if existing is not None:
+            assert_callback_boundary(existing)
+            return existing
+        if not self.settings.provider_policy_approved:
+            raise RuntimeError("Provider data policy has not been approved")
+        if not self.settings.openai_api_key.get_secret_value():
+            raise RuntimeError("Provider credential is not configured")
+        client = ChatOpenAI(model=self.settings.fallback_llm_model if fallback else self.settings.primary_llm_model,
+                            api_key=self.settings.openai_api_key,
+                            base_url=self.settings.openai_base_url, temperature=0,
+                            timeout=self.settings.request_timeout_seconds, max_retries=0)
+        if fallback:
+            self.fallback_llm = client
+        else:
+            self.llm_primary = client
+        return client
 
     def _build_graph(self):
         """
@@ -101,16 +101,16 @@ class ProductionAgent:
             """Process the user query using the primary LLM (Qwen 3.8 Flash)."""
             try:
                 prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(state["messages"])
-                response = self.llm_primary.invoke(prompt_messages)
+                response = self._provider().invoke(prompt_messages)
 
                 return {
                     "messages": [response],
-                    "model_used": settings.primary_llm_model,
+                    "model_used": self.settings.primary_llm_model,
                     "error": None,
                 }
             except Exception as e:
                 return {
-                    "error": str(e),
+                    "error": error_category(e),
                     "retry_count": state.get("retry_count", 0) + 1,
                     "model_used": "",
                 }
@@ -119,16 +119,16 @@ class ProductionAgent:
             """Attempt fallback LLM (DeepSeek v4.1 Flash) when primary fails."""
             try:
                 prompt_messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(state["messages"])
-                response = self.fallback_llm.invoke(prompt_messages)
+                response = self._provider(fallback=True).invoke(prompt_messages)
 
                 return {
                     "messages": [response],
-                    "model_used": settings.fallback_llm_model,
+                    "model_used": self.settings.fallback_llm_model,
                     "error": None,
                 }
             except Exception as e:
                 return {
-                    "error": str(e),
+                    "error": error_category(e),
                     "retry_count": state.get("retry_count", 0) + 1,
                     "model_used": "",
                 }
@@ -194,12 +194,13 @@ class ProductionAgent:
 
         return workflow.compile()
 
-    @traceable(name="ProductionAgent.invoke", run_type="chain")
+    @safe_trace(name="ProductionAgent.invoke", run_type="chain")
     def invoke(self, message: str, thread_id: str = "default") -> dict:
         """
         Invoke the LangGraph agent with a message.
         Returns: {"response": str, "model_used": str, "error": str | None, "thread_id": str}
         """
+        assert_callback_boundary(self.graph, self.llm_primary, self.fallback_llm)
         result = self.graph.invoke({
             "messages": [HumanMessage(content=message)],
             "error": None,
@@ -218,7 +219,9 @@ class ProductionAgent:
         }
 
 
-# Instância exportada
-production_agent = ProductionAgent()
+@lru_cache
+def get_production_agent() -> ProductionAgent:
+    """Explicit composition; never constructs provider clients at import time."""
+    return ProductionAgent()
 
-__all__ = ["AgentState", "ProductionAgent", "production_agent", "SYSTEM_PROMPT"]
+__all__ = ["AgentState", "ProductionAgent", "get_production_agent", "SYSTEM_PROMPT"]

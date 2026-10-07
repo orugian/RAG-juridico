@@ -86,6 +86,16 @@ def _write_pdf_file(tmp_path: Path, filename: str, pages_lines: list[list[str]])
     return pdf_path
 
 
+def test_pdf_physical_locator_preserves_page_and_block_origin(tmp_path):
+    from app.ingestion.pdf_parser import extract_pdf_blocks
+    path = _write_pdf_file(tmp_path, "locations.pdf", [["CLÁUSULA PRIMEIRA - O pagamento sintético segue as obrigações expressamente pactuadas."], ["CLÁUSULA SEGUNDA - A obrigação sintética tem vencimento expressamente previsto no instrumento."]])
+    blocks = extract_pdf_blocks(path, doc_id=1)
+    assert [block.source_locator["page"] for block in blocks] == [1, 2]
+    assert all(block.source_locator["page_block_index"] == 0 for block in blocks)
+    assert all(block.source_locator["extraction"] == "native" for block in blocks)
+    assert all(block.source_locator["verification"] == "unreviewed" for block in blocks)
+
+
 # --- Step 1: Physical file and header validation ---
 
 
@@ -206,7 +216,7 @@ def test_scanned_pdf_triggers_ocr(tmp_path: Path, monkeypatch):
         mock_doc_ium.close.assert_called_once()
 
         # Verify pytesseract was invoked with the rendered PIL image and lang
-        mock_ocr.assert_called_once_with(mock_pil_image, lang="por")
+        mock_ocr.assert_called_once_with(mock_pil_image, lang="por", timeout=30)
 
         assert len(blocks) >= 3
         # ALL blocks from the scanned page must carry LOW_CONFIDENCE_OCR

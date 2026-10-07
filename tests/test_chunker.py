@@ -15,7 +15,7 @@ import logging
 import pytest
 from langchain_core.documents import Document
 
-from app.ingestion.chunker import create_legal_chunks
+from app.ingestion.chunker import create_candidate_chunks as create_legal_chunks
 from app.ingestion.schemas import (
     BlockType,
     ContractMetadata,

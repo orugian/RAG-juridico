@@ -239,11 +239,16 @@ def extract_legacy_blocks(
             timeout_sec=timeout_sec,
             libreoffice_cmd=libreoffice_cmd,
         )
-        return extract_docx_blocks(
+        blocks = extract_docx_blocks(
             converted_docx,
             doc_id,
             doc_version,
         )
+        # The locator addresses the conversion, never the original legacy file.
+        for block in blocks:
+            if block.source_locator:
+                block.source_locator = {**block.source_locator, "format": "converted_docx", "original_format": legacy_file.suffix.lower(), "conversion_artifact_retained": False}
+        return blocks
     finally:
         if ephemeral:
             shutil.rmtree(target_staging, ignore_errors=True)

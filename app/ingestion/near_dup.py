@@ -16,6 +16,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from app.identifiers import extract_identifier_candidates
 
 _MAX_XML_BYTES = 20 * 1024 * 1024  # proteção contra zip bomb
 _SHINGLE = 5
@@ -47,12 +48,9 @@ def jaccard(a: frozenset[str], b: frozenset[str]) -> float:
     return len(a & b) / len(a | b)
 
 
-_PARTY_ID = re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b|\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")
-
-
 def party_ids(text: str) -> frozenset[str]:
-    """CPFs/CNPJs citados no texto (só dígitos). Mesmo texto-base com partes diferentes = instrumentos distintos."""
-    return frozenset(re.sub(r"\D", "", m) for m in _PARTY_ID.findall(text))
+    """Candidatos CPF/CNPJ canônicos; forma não comprova identidade das partes."""
+    return frozenset(extract_identifier_candidates(text))
 
 
 @dataclass(frozen=True)

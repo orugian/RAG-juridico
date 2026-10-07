@@ -452,7 +452,7 @@ def extract_docx_blocks(
     state = ParserState()
     current_order_index = 0
 
-    for elem in body:
+    for body_child_index, elem in enumerate(body):
         tag = _local_tag(elem)
 
         if tag == "p":
@@ -540,6 +540,7 @@ def extract_docx_blocks(
                 text_search=text_search,
                 table_metadata=None,
                 spans=[{"start": 0, "end": len(text_raw)}],
+                source_locator={"format": "docx", "xml_part": "word/document.xml", "body_child_index": body_child_index, "verification": "unreviewed", "source_text": body_text, "numbering_prefix": resolved_num},
                 uncertainty_flags=flags,
             )
             blocks.append(block)
@@ -610,6 +611,7 @@ def extract_docx_blocks(
                         text_search=text_search,
                         table_metadata=table_meta,
                         spans=[{"start": 0, "end": len(text_raw)}],
+                        source_locator={"format": "docx", "xml_part": "word/document.xml", "body_child_index": body_child_index, "row_index": r_idx, "column_index": c_idx, "header_row_index": header_row_idx, "verification": "unreviewed", "source_text": cell_text, "header_text": col_name},
                         uncertainty_flags=flags,
                     )
                     blocks.append(block)

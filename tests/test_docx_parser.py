@@ -53,6 +53,21 @@ def _build_docx(
     return docx_path
 
 
+def test_physical_locator_counts_empty_paragraphs_and_distinguishes_table_header(tmp_path):
+    xml = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/><w:p><w:r><w:t>CLÁUSULA PRIMEIRA</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Valor</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>100</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>'
+    blocks = extract_docx_blocks(_build_docx(tmp_path, "locator.docx", xml), doc_id=1)
+    assert blocks[0].order_index == 0
+    assert blocks[0].source_locator["body_child_index"] == 1
+    table = blocks[-1]
+    assert table.text_raw == "Valor: 100"
+    assert table.source_locator["source_text"] == "100"
+    assert table.source_locator["header_text"] == "Valor"
+    assert table.source_locator["body_child_index"] == 2
+    assert table.source_locator["row_index"] == 1
+    assert table.source_locator["header_row_index"] == 0
+    assert table.source_locator["verification"] == "unreviewed"
+
+
 def test_extract_docx_blocks_simple_document(tmp_path: Path):
     doc_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">

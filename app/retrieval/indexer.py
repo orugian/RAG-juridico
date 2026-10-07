@@ -1,13 +1,17 @@
 """
-Atomic Hybrid Indexer Engine (ChromaDB + BM25).
+Legacy Local Hybrid Indexer Helper (ChromaDB + BM25).
 
-Constructs and synchronizes dual vector (ChromaDB) and lexical (BM25) indices
-under a single immutable corpus_generation_id with atomic chunk_id alignment.
-Provides deterministic, lightweight offline embeddings for fast, network-isolated tests.
+Builds dense and lexical indices with aligned chunk identifiers for local tests.
+It does not implement atomic publication, immutable generations, approval-ledger
+authorization, or the P4 journal. Never use it to promote an actual corpus.
+Joblib loading is limited to trusted local artifacts: digest checks detect
+incompatibility and corruption, not authenticity of external pickle contents.
 """
 
 import hashlib
+import json
 import logging
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -17,7 +21,31 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
+from app.retrieval.lexical import BM25_PARAMETERS, lexical_profile, lexical_tokens
+
 logger = logging.getLogger(__name__)
+
+
+def build_governed_generation(*, manager, generation_id, bundle, source_paths,
+                             source_documents=None, conversion_paths=None, reuse_from=None, fault=None):
+    """P4 entrypoint; explicit reviewed proof, model, backend and authority only.
+
+    Unlike legacy build_and_save_hybrid_index, this never selects defaults or
+    promotes. Keep legacy test helpers separate from the governed workflow.
+    """
+    from app.retrieval.generations import GenerationManager
+    if not isinstance(manager, GenerationManager):
+        raise ValueError("governed_generation_manager_required")
+    return manager.build(generation_id, bundle, source_paths=source_paths,
+                         source_documents=source_documents, conversion_paths=conversion_paths,
+                         reuse_from=reuse_from, fault=fault)
+
+
+def _canonical_documents_digest(documents: List[Document]) -> str:
+    """Bind the lexical corpus's ordered literal text and canonical metadata."""
+    payload = [{"page_content": doc.page_content, "metadata": doc.metadata} for doc in documents]
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 class DeterministicHashEmbeddings(Embeddings):
@@ -65,17 +93,26 @@ def _sanitize_metadata_for_chroma(metadata: Optional[Dict[str, Any]]) -> Dict[st
     """
     Sanitize metadata for ChromaDB compatibility.
 
-    ChromaDB rejects empty lists in metadata ('Expected metadata list value to be non-empty').
-    Empty lists are omitted from Chroma storage while preserved in BM25 and canonical doc map.
+    Complex values use stable JSON strings, including empty collections. None
+    is omitted. The canonical Document/BM25 retains its original metadata; dense
+    storage is only a projection, never the citation source. JSON fields are
+    not scalar client/date filters and must not be treated as such.
     """
     if not metadata:
         return {}
 
     sanitized: Dict[str, Any] = {}
     for k, v in metadata.items():
-        if isinstance(v, (list, tuple)) and len(v) == 0:
+        if v is None:
             continue
-        sanitized[k] = v
+        if isinstance(v, (list, tuple, dict)):
+            sanitized[k] = json.dumps(v, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        elif isinstance(v, (str, bool, int)):
+            sanitized[k] = v
+        elif isinstance(v, float) and math.isfinite(v):
+            sanitized[k] = v
+        else:
+            raise ValueError("Unsupported Chroma metadata value")
     return sanitized
 
 
@@ -87,7 +124,7 @@ def build_and_save_hybrid_index(
     k: int = 4,
 ) -> "LegalHybridRetriever":
     """
-    Build and atomically persist synchronized ChromaDB and BM25 indices.
+    Build aligned local ChromaDB/BM25 test indices, without atomic publication.
 
     Args:
         chunks: List of LangChain Documents produced by the chunker.
@@ -107,7 +144,7 @@ def build_and_save_hybrid_index(
     if not chunks:
         raise ValueError("Lista de chunks para indexação não pode ser vazia.")
 
-    # Validate atomic contract: every chunk must have a chunk_id
+    # Validate identifier alignment: every chunk must have a chunk_id.
     for idx, chunk in enumerate(chunks):
         if not chunk.metadata or not chunk.metadata.get("chunk_id"):
             raise ValueError(
@@ -140,8 +177,13 @@ def build_and_save_hybrid_index(
     )
 
     # 2. Build and Persist BM25
-    bm25 = BM25Retriever.from_documents(chunks, k=k)
+    bm25 = BM25Retriever.from_documents(chunks, k=k, preprocess_func=lexical_tokens, bm25_params=BM25_PARAMETERS)
     joblib.dump(bm25, bm25_path)
+    (target_dir / "lexical.json").write_text(
+        json.dumps({"profile": lexical_profile(),
+                    "documents_sha256": _canonical_documents_digest(chunks),
+                    "artifact_sha256": hashlib.sha256(bm25_path.read_bytes()).hexdigest()}, sort_keys=True), encoding="utf-8"
+    )
 
     logger.info(
         "Índice híbrido gerado com sucesso sob generation_id=%s em %s (%d chunks indexados).",
@@ -168,7 +210,7 @@ def load_hybrid_retriever(
     k: int = 4,
 ) -> "LegalHybridRetriever":
     """
-    Load previously persisted synchronized hybrid index from disk.
+    Load a trusted local test index after lexical compatibility checks.
 
     Args:
         generation_id: Target generation identifier.
@@ -187,6 +229,7 @@ def load_hybrid_retriever(
     target_dir = Path(base_dir) / generation_id
     chroma_dir = target_dir / "chroma"
     bm25_path = target_dir / "bm25.joblib"
+    lexical_path = target_dir / "lexical.json"
 
     if not target_dir.is_dir():
         raise FileNotFoundError(f"Diretório de geração não encontrado: {target_dir}")
@@ -195,6 +238,15 @@ def load_hybrid_retriever(
     if not chroma_dir.is_dir():
         raise FileNotFoundError(f"Diretório de índice Chroma não encontrado: {chroma_dir}")
 
+    try:
+        profile = json.loads(lexical_path.read_text(encoding="utf-8"))
+        compatible = (isinstance(profile, dict) and profile.get("profile") == lexical_profile()
+                      and profile.get("artifact_sha256") == hashlib.sha256(bm25_path.read_bytes()).hexdigest())
+    except (OSError, ValueError):
+        compatible = False
+    if not compatible:
+        raise ValueError("Índice lexical incompatível; reconstrução necessária")
+
     active_embeddings = embeddings or DeterministicHashEmbeddings()
 
     chroma = Chroma(
@@ -202,7 +254,12 @@ def load_hybrid_retriever(
         embedding_function=active_embeddings,
     )
     bm25: BM25Retriever = joblib.load(bm25_path)
+    if getattr(bm25, "preprocess_func", None) is not lexical_tokens:
+        raise ValueError("Índice lexical incompatível; reconstrução necessária")
     docs = getattr(bm25, "docs", [])
+    if (profile.get("documents_sha256") != _canonical_documents_digest(docs)
+            or any(getattr(bm25.vectorizer, key, None) != value for key, value in BM25_PARAMETERS.items())):
+        raise ValueError("Índice lexical incompatível; reconstrução necessária")
 
     logger.info(
         "Índice híbrido carregado com sucesso de %s (%d chunks disponíveis).",

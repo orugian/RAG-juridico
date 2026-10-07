@@ -91,9 +91,12 @@ def test_prompt_injection_detection_legitimate_legal_queries():
         assert reason is None
 
 
-def test_verify_api_key_dev_mode():
+def test_verify_api_key_dev_mode(monkeypatch):
+    import app.security as security
+    from app.config import Settings
+    monkeypatch.setattr(security, "settings", Settings(_env_file=None, app_env="development", development_auth_bypass=True))
     user = asyncio.run(verify_api_key(None))
-    assert user in ("dev-internal-user", "internal-collaborator")
+    assert user.principal_id == "synthetic-development"
 
 
 def test_security_pipeline_run_success():
@@ -151,4 +154,3 @@ if __name__ == "__main__":
     print("=" * 60)
     print("Executando testes automatizados com pytest:\n")
     pytest.main([__file__, "-v"])
-

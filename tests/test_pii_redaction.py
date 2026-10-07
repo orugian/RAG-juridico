@@ -126,20 +126,19 @@ def test_safe_callback_redacts_on_chain_start():
         metadata={"model": "qwen3.8"},
     )
 
-    # In-place and internal run inputs must be redacted
-    assert inputs["verbatim_text"] == REDACTED_INPUT_PII_PROTECTED
-    assert inputs["contract_payload"] == REDACTED_INPUT_PII_PROTECTED
-    assert "111.222.333-44" not in inputs["query"]
-    assert "[REDACTED_CPF]" in inputs["query"]
+    # Proof remains untouched; only a separate allowlisted projection is retained.
+    assert inputs["verbatim_text"] == "Cláusula 1ª - Das Obrigações do Contratante"
+    assert inputs["contract_payload"] == "Texto integral confidencial de contrato de honorários"
+    assert "111.222.333-44" in inputs["query"]
     assert inputs["node_id"] == "clause_retriever"
 
     run = handler.get_run(run_id)
     assert run is not None
-    assert run["step_name"] == "clause_extraction_node"
-    assert run["inputs"]["verbatim_text"] == REDACTED_INPUT_PII_PROTECTED
-    assert run["inputs"]["contract_payload"] == REDACTED_INPUT_PII_PROTECTED
+    assert run["step_name"] == "chain"  # unregistered dynamic names are dropped
+    assert run["inputs"]["redacted"] == REDACTED_INPUT_PII_PROTECTED
+    assert "contract_payload" not in run["inputs"]
     assert run["status"] == "running"
-    assert "oab_confidential" in run["tags"]
+    assert run["tags"] == ["privacy_redacted"]
 
 
 def test_safe_callback_redacts_on_chain_end():
@@ -159,8 +158,8 @@ def test_safe_callback_redacts_on_chain_end():
 
     handler.on_chain_end(outputs=outputs, run_id=run_id)
 
-    assert outputs["verbatim_text"] == REDACTED_OUTPUT_PII_PROTECTED
-    assert outputs["answer"] == REDACTED_OUTPUT_PII_PROTECTED
+    assert outputs["verbatim_text"] == "Cláusula de rescisão contratual no valor de 100 mil."
+    assert "999.888.777-66" in outputs["answer"]
     assert outputs["status_code"] == 200
 
     run = handler.get_run(run_id)
@@ -168,7 +167,7 @@ def test_safe_callback_redacts_on_chain_end():
     assert run["status"] == "success"
     assert run["latency_ms"] is not None
     assert run["latency_ms"] >= 8.0
-    assert run["outputs"]["verbatim_text"] == REDACTED_OUTPUT_PII_PROTECTED
+    assert run["outputs"]["redacted"] == REDACTED_OUTPUT_PII_PROTECTED
 
 
 def test_safe_callback_preserves_data_when_unredacted():
@@ -202,7 +201,7 @@ def test_safe_callback_records_chain_errors():
     assert run is not None
     assert run["status"] == "error"
     assert run["error_type"] == "ValueError"
-    assert "Invalid document encoding" in run["error"]
+    assert run["error"] == "validation_error"
     assert run["latency_ms"] is not None
     assert run["latency_ms"] >= 4.0
 
@@ -222,10 +221,10 @@ def test_safe_callback_on_llm_events_and_token_tracking():
         tags=["llm_generation"],
     )
 
-    # Prompt list mutated and run inputs redacted
-    assert prompts[0] == REDACTED_INPUT_PII_PROTECTED
+    # Prompts and generations remain usable in the pipeline.
+    assert "123.456.789-00" in prompts[0]
     run = handler.get_run(run_id)
-    assert run["inputs"]["prompts"][0] == REDACTED_INPUT_PII_PROTECTED
+    assert run["inputs"]["redacted"] == REDACTED_INPUT_PII_PROTECTED
 
     # Simulate LLM end with token usage
     response = LLMResult(
@@ -243,8 +242,7 @@ def test_safe_callback_on_llm_events_and_token_tracking():
 
     handler.on_llm_end(response=response, run_id=run_id)
 
-    # Generation text redacted
-    assert response.generations[0][0].text == REDACTED_OUTPUT_PII_PROTECTED
+    assert response.generations[0][0].text == "A cláusula de juros moratórios é de 1% ao mês."
     updated_run = handler.get_run(run_id)
     assert updated_run["status"] == "success"
     assert updated_run["tokens"]["total_tokens"] == 195

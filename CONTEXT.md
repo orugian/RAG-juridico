@@ -1,9 +1,19 @@
 # CONTEXT.md — Sistema RAG de Produção: Andrade Advogados
 
+> **Estado atual em 07/10/2026:** [P5 técnico sintético](docs/execution/2026-10-07-p5-evidencias.md) **aprovado 9,33/10 na rodada 1**, nenhum alto/crítico aberto identificado no recorte auditado. Candidato 1: 5 identidades congeladas (`app/retrieval/hybrid.py`, `app/retrieval/__init__.py`, `app/evaluation/retrieval.py`, `tests/test_p5_retrieval.py`, `tests/test_p5_evaluation.py`). Regressão offline integrada final: 1.090 testes passaram, um online deselecionado, dois avisos legados em 249,66 s (0:04:09), via comando com `--qwen-artifact data/models/qwen3-embedding-0.6b-97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`. [Parecer formal](docs/reviews/2026-10-07-exec-p5.md) SHA-256 `ef260d849a286fe32dd3784addb93c19582106b1df924a033eade04af8f9d893`. As 12 identidades de P3B C3 e 14 de P4 C3 permanecem 100% intocadas. Próxima frente: P6 técnico sintético (geração governada sobre RetrievalResult e citação dos 4 Elementos). Nenhum G4 operacional/D04/corpus real/G3 pleno/API/SLO/Linux/AWS liberado.
+
+> **Histórico de P4 em 07/10/2026:** [P4 técnico sintético](docs/execution/2026-10-07-p4-evidencias.md) aprovado 9,22/10 na rodada 3 final, J1/J2/J3 fechados; parecer SHA-256 `d2d5941a52e6c89441d23eb3472c561c537edbf448f086afa51b4b9dcee2983d`. Reprovações históricas R1 8,78 e R2 8,80 preservadas. 14 identidades aceitas, 1.079 testes integrados.
+
+> **Histórico de P3B/P3A em 06/10/2026:** plano/specs v0.6 congelados; P0/P1/P2A aprovados; P3A aprovado 9,17; correção lexical/temporal aprovada 9,18 (R4); P3B aprovado 9,20/10 na rodada 3 final (J1/J2 fechados; parecer `fb5e861d4ece52674bbbb120911df2e68f5f351f1353254b3614a2923273dea7`; reprovações 8,74/8,91 preservadas).
+
+> **Limites vigentes:** staging histórico de 287 arquivos/14.791 blocos, 202 quarantined/85 failed, zero aprovação humana e nenhum corpus/índice publicado ou API RAG operacional. Revisão humana adiada; avançar em preparação técnica e fixtures sintéticas. OpenRouter bloqueado até política de dados. Comparação documental, G3 pleno, desempenho/SLO Linux/AWS e implantação continuam pendentes; normalização de nomes/datas não é validação jurídica. Este documento conserva políticas/requisitos; afirmações históricas não substituem os [gates atuais](docs/execution/2026-10-05-execucao-rag.md).
+
 > **Revisão de prontidão em 05/10/2026:** consultar o [parecer de preparação dos dados](docs/AUDITORIA_PREPARACAO_RAG_2026-10-05.md) antes de executar as Etapas 2–4. As contagens 287/944/61 foram confirmadas, mas a validação humana não está registrada e há lacunas de preservação de QA, cobertura de quase-duplicatas, identidade de indexação e fidelidade do parsing. As afirmações técnicas abaixo sobre garantia de numeração, busca exata e prontidão devem ser lidas com as correções do parecer. As políticas de escopo permanecem vigentes; a revisão não implementou o pipeline nem liberou o corpus para produção.
 
-> **Fonte Única de Verdade (Single Source of Truth) para Agentes de IA e Desenvolvedores.**  
-> Este documento define a natureza jurídica, arquitetura de software, restrições operacionais, modelos de dados e guardrails mandatórios do sistema RAG em desenvolvimento para o escritório **Andrade Advogados**.
+> **Referência canônica de escopo e políticas do produto.**
+> Este documento conserva a natureza jurídica e a arquitetura-alvo do RAG **Andrade Advogados**. Estado, mapa e prompt de retomada ficam no [HANDOFF](docs/HANDOFF.md); requisitos/gates completos no plano/specs v0.6 congelados; evidências e decisões nos registros/pareceres. Leia as instruções AGENTS.md/RTK.md aplicáveis explicitamente; esta documentação não instala hooks nem autoriza executar comandos históricos.
+
+> **Encerramento da sessão em 07/10/2026:** P5 técnico aceito (9,33/10, R1), P6 ainda não iniciado. Próxima sessão: geração governada e citação da Regra dos 4 Elementos sobre RetrievalResult em fixtures sintéticas conforme escopo/critérios do HANDOFF, sem expandir para P7/API/produção. Os estados de implementação abaixo foram ajustados por inspeção do código; descrições de extração/classificação externa de 05/10 continuam históricas, não autorização de novo sync/chamada OpenRouter. Nenhum código, teste, corpus ou parecer foi alterado neste fechamento documental.
 
 ---
 
@@ -30,7 +40,7 @@ O sistema é uma API de produção baseada em **Retrieval-Augmented Generation (
 * A base contratual contém dados sensíveis protegidos por sigilo profissional e pela Lei Geral de Proteção de Dados (LGPD):
   * Identificação de clientes: Nomes completos, CPFs, CNPJs, endereços, e-mails e telefones.
   * Dados econômico-financeiros: Valores de honorários, percentuais de êxito, prazos de pagamento, contas bancárias e dados patrimoniais.
-* **Diretriz de Sanitização:** O pipeline de entrada ([app/security.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/security.py)) **não pode ofuscar nem deletar CPFs, CNPJs ou valores**, pois esses dados são chaves essenciais de busca contratual. A limpeza foca na eliminação de *null bytes*, caracteres de controle maliciosos e injeções de prompt.
+* **Diretriz de Sanitização:** O pipeline de entrada ([app/security.py](app/security.py)) **não pode ofuscar nem deletar CPFs, CNPJs ou valores**, pois esses dados são chaves essenciais de busca contratual. A limpeza foca na eliminação de *null bytes*, caracteres de controle maliciosos e injeções de prompt.
 
 ### 2.2. Vocabulário Contratual e Tipografia Legal
 * Documentos jurídicos utilizam caracteres especiais fundamentais para a correta referenciação de cláusulas: `§` (parágrafo), `º` (ordinal masculino), `ª` (ordinal feminino), `art.` (artigo), `cl.` (cláusula) e traços de assinatura (`___`).
@@ -145,6 +155,8 @@ A extração (`data/raw`) é ampla; o índice RAG é restrito. **Toda decisão �
 
 **Proteção de dados:** o Jev recebe **apenas** título, classe, pasta de origem relativa e palavras-chave — nunca o conteúdo dos arquivos nem a propriedade "Cliente". A TypeSafe é operadora adicional (via OpenRouter), aceita por decisão do escritório.
 
+**Fronteira atual de retomada:** o parágrafo anterior registra a execução histórica de classificação por metadados; não constitui a política D01 para novas chamadas. OpenRouter permanece bloqueado até definição da política de dados; não reexecutar classificadores externos, enviar perguntas/trechos contratuais ou sincronizar M-Files implicitamente durante P5 sintético.
+
 **Limitações conhecidas (tratadas na Etapa 2):** a classificação usa só metadados; quase-duplicatas de conteúdo (mesmo contrato em `.docx` e `.rtf`, versões sem marcador no título) só são detectáveis após o parsing; a classe do M-Files enviesa o Jev (petições na classe "Acordo" → "acordo"), por isso o modelo nunca vence uma regra forte sem passar por revisão humana.
 
 ### 3.2. Estratégia de Chunking Jurídico
@@ -154,23 +166,23 @@ A extração (`data/raw`) é ampla; o índice RAG é restrito. **Toda decisão �
   * Cada Cláusula contratual e seus respectivos parágrafos/incisos formam unidades lógicas autônomas.
   * **Header de Contexto em cada Chunk:** Todo chunk recebe no seu cabeçalho: `[Contrato: {nome} | Partes: {partes} | Cláusula: {num}]`.
 
+Implementação P3B aceita: CitationUnit conserva a unidade canônica completa e o fechamento aprovado; EvidenceChunks podem ser slices de busca dentro do limite Qwen, com mapas/origem e reconstrução sem perda. Cabeçalho/contexto sintético não são transcrição literal. Recuperar um slice não autoriza citar cláusula incompleta; P5/P6 devem consumir o resolver e o orçamento, sem truncar prova.
+
 ### 3.3. Mecanismo de Busca Híbrida (Hybrid Search: Dense + BM25)
 * **Problema Resolvido:** Modelos de embedding densos falham na busca por CNPJ exato, números de contrato e termos singulares.
-* **Solução:** `EnsembleRetriever` do LangChain combinando:
-  1. **Dense Retrieval (Semântico):** ChromaDB persistido localmente no disco EBS da EC2 (`./data/chroma`).
-  2. **Sparse Retrieval (Léxico Exato):** `BM25Retriever` em memória/cache local, garantindo acerto imediato em consultas por CNPJ (`12.345.678/0001-90`) ou número de contrato.
-  3. **Fusão Ponderada:** Fusão com pesos equilibrados (ex.: 50% BM25 + 50% Dense) para garantir que correspondências literais tenham alta prioridade.
+* **Arquitetura-alvo:** busca densa Chroma + BM25 com normalização compartilhada e fusão RRF determinística. Correspondência lexical ajuda na seleção de identificadores/termos, mas não garante acerto, cobertura, autorização ou verdade jurídica; medir nas condições das specs.
+* **Implementação disponível:** P4 persiste prova/BM25/vetores com paridade embedded/servidor Rust loopback real e Qwen fixado. LegalHybridRetriever é legado: seleção numérica/RRF existem, mas mutação de parâmetros, execução async síncrona e falhas silenciadas ainda exigem integração/verificação P5. O probe P4 não é um recuperador P5 avaliado. EBS/serviço AWS são alvo futuro, não implantação existente.
 
 ### 3.4. Infraestrutura de Hospedagem
-* **Hospedagem:** Instância EC2 com **16 GB de RAM**.
-* **Soberania dos Dados:** O banco vetorial (Chroma) e o índice léxico (BM25) residem 100% na máquina do escritório, garantindo isolamento total de dados de clientes frente a bancos vetoriais gerenciados em nuvens públicas de terceiros.
+* **Alvo proposto:** EC2 Linux com **16 GB de RAM**, ainda sem implantação/aceite D04. Desenvolvimento atual Windows local; capacidade/latência da pilha completa não homologadas.
+* **Perímetro previsto:** Chroma, BM25 e prova sob controle do escritório, sem banco vetorial gerenciado externo. Isso não é garantia automática de isolamento: rede, credenciais, exportadores, backups, journal externo e domínios de falha dependem da qualificação operacional Linux/AWS.
 
 ---
 
 ## 4. Arquitetura do Agente e Orquestração (LangGraph)
 
 ### 4.1. Grafo de Estado Determinístico (`StateGraph`)
-O processamento de qualquer consulta no [app/agent.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/agent.py) segue um grafo determinístico:
+O diagrama abaixo é **arquitetura-alvo P6/P7**, não o fluxo implementado atual. app/agent.py contém grafo legado de chamadas a modelos, sem recuperação/prova governadas P5/P6, e app/main.py está vazio. A integração ainda deverá introduzir planejamento, recuperação, fechamento/contexto, validação e renderização backend; não habilitar consulta real com base neste desenho:
 
 ```mermaid
 graph TD
@@ -188,9 +200,9 @@ graph TD
 ```
 
 ### 4.2. Modelos de Linguagem Configurados
-* **Provedor:** OpenAI-compatible API (definido via `OPENAI_API_KEY` em [app/config.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/config.py)).
-* **Modelo Primário:** `qwen/qwen3.8-flash` (alta velocidade, excelente interpretação de contratos em português).
-* **Modelo Fallback:** `deepseek/deepseek-v4.1-flash` (acionamento automático em caso de rate limit, erro HTTP 5xx ou timeout do provedor primário).
+* **Geração legada:** configuração OpenAI-compatible/OpenRouter em app/config.py; provider_policy_approved=False impede construir cliente real pelo caminho legado. Não ler .env/segredos para iniciar P5.
+* **Nomes presentes no legado:** primário `qwen/qwen3.8-flash` e fallback `deepseek/deepseek-v4.1-flash`; são configuração histórica, não evidência de qualidade/disponibilidade ou perfil de geração homologado sob D01/P6. Nenhum fallback externo não aprovado é permitido.
+* **Embedding escolhido e aceito:** Qwen/Qwen3-Embedding-0.6B local, distinto dos nomes de geração acima, com revisão/artefato/orçamentos fixados no HANDOFF. P5 não reabre essa escolha nem baixa pesos por rotina.
 
 ### 4.3. Extensibilidade Futura: Busca em Caixas de E-mail
 O Grafo de Estado foi desenhado para suportar o acoplamento futuro de um `email_retriever_node` ou `ToolNode` (integrado ao Microsoft 365 / Outlook / Gmail) sem alterar os nós existentes de segurança, cache ou métricas.
@@ -199,38 +211,26 @@ O Grafo de Estado foi desenhado para suportar o acoplamento futuro de um `email_
 
 ## 5. Mapeamento da Base de Código
 
-A estrutura do projeto está organizada de forma modular e concisa sob o diretório `app/`:
+A navegação detalhada e as fronteiras correntes estão no [mapa do HANDOFF](docs/HANDOFF.md#mapa-de-código-para-a-retomada). A tabela abaixo substitui os estados históricos que marcavam helpers existentes como “A Implementar”; existência de código não equivale a aceite de produção.
 
-| Arquivo | Estado Atual | Responsabilidade Arquitetural |
-| :--- | :--- | :--- |
-| [pyproject.toml](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/pyproject.toml) | Configurado | Dependências do projeto gerenciadas via `uv` (FastAPI, LangChain, LangGraph, LangSmith, SlowAPI, Pytest). |
-| [app/config.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/config.py) | Implementado | Configurações centralizadas via `pydantic-settings` (.env, chaves de API, modelos, TTL de cache, rate limits, M-Files, diretório de dados brutos). |
-| [app/models.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/models.py) | Implementado | Schemas Pydantic para `ChatRequest`, `ChatResponse`, `HealthResponse`, `MetricsResponse` e `ErrorResponse`. |
-| [app/security.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/security.py) | Concluído & Testado | Rate Limiter (`slowapi`), autenticação por `X-API-Key`, sanitizador de entrada (preservando PII legal), filtro de injeção de prompt e pipeline com LangSmith `@traceable`. |
-| [app/cache.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/cache.py) | A Implementar | Cache em memória com controle de TTL (300s) e expiração para perguntas frequentes sobre contratos. |
-| [app/agent.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/agent.py) | A Implementar | Definição do `StateGraph` do LangGraph, integração do `EnsembleRetriever` (Chroma + BM25) e lógica de fallback. |
-| [app/monitoring.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/monitoring.py) | A Implementar | Coleta de métricas em tempo de execução (latência média, tokens consumidos, taxa de acerto de cache, erros). |
-| [app/main.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/main.py) | A Implementar | Ponto de entrada FastAPI: instancia a app, registra middlewares, rotas `/chat`, `/health`, `/metrics` e tratamento global de exceções. |
-| [app/ingestion/mfiles_client.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/mfiles_client.py) | Concluído & Testado | Cliente REST somente leitura do M-Files: autenticação por token, re-auth em 401/403, retry com backoff, resolução dinâmica de classes, download de arquivos. |
-| [app/ingestion/sync.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/sync.py) | Concluído & Testado | Sincronização incremental M-Files → `data/raw` + `manifest.jsonl`. Testes em `tests/test_ingestion.py` (vault simulado via `httpx.MockTransport`). |
-| [app/ingestion/file_format.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/file_format.py) | Concluído & Testado | Formato real por magic bytes e rota de parsing da Etapa 2. |
-| [app/ingestion/curation_rules.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/curation_rules.py) | Concluído & Testado | Taxonomia, normalização e regras de curadoria versionadas (`RULES_VERSION`). |
-| [app/ingestion/near_dup.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/near_dup.py) | Concluído & Testado | Quase-duplicatas locais por conteúdo (.docx) + partes (CPF/CNPJ). |
-| [app/ingestion/jev_classifier.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/jev_classifier.py) | Concluído & Testado | Cliente do Jev (OpenRouter Decisions API) com cache, retry e minimização de dados. |
-| [app/ingestion/curation.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/app/ingestion/curation.py) | Concluído & Testado | Orquestração da curadoria, overrides, saídas e `load_curated()` (interface da Etapa 2). Testes em `tests/test_curation.py`. |
-| [tests/test_security.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/tests/test_security.py) | Concluído & Passando | Testes unitários do pipeline de segurança, preservação de CPFs/CNPJs e detecção de ataques em PT/EN. |
-| [tests/test_cache.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/tests/test_cache.py) | A Implementar | Testes de invalidação por tempo (TTL), hit/miss e controle de concorrência. |
-| [tests/test_api.py](file:///c:/Users/orugi/Documents/Projetos/production-api-aadvogados/tests/test_api.py) | A Implementar | Testes de integração end-to-end com `httpx.AsyncClient`. |
+| Área | Estado verificado | Referência |
+| --- | --- | --- |
+| Configuração/contratos | Implementados; não ativam serviço/modelo implicitamente | app/config.py, models.py, contracts.py, identifiers.py; pyproject.toml/uv.lock |
+| Segurança/telemetria | Fundação P1 aceita; exportação externa bloqueada por padrão | app/security.py, telemetry.py, monitoring.py e testes de fronteira |
+| Ingestão/curadoria/parsing | Módulos existentes, staging técnico; corpus humano não aprovado | app/ingestion/mfiles_client.py, sync.py, file_format.py, curation_rules.py, near_dup.py, jev_classifier.py, curation.py, parsing_pipeline.py, batch.py |
+| Prova/ledger/fechamento | P3B técnico aceito | app/ingestion/evidence.py, provenance.py, references.py, review_store.py, closure.py, chunker.py |
+| Embedding/lexical/gerações | P3A/lexical/P4 técnicos aceitos; operação pendente | app/embeddings/, app/retrieval/lexical.py e módulos P4 listados no HANDOFF |
+| Recuperação | P5 técnico sintético aceito (9,33/10, R1) | app/retrieval/hybrid.py, indexer.py, app/evaluation/retrieval.py |
+| Grafo/cache | Helpers existentes, não integrados à prova/autoridade como P6/P7 | app/agent.py; app/cache.py usa chave por pergunta/TTL legado |
+| API | app/main.py e tests/test_api.py vazios; P7 pendente | Contratos HTTP existem nos modelos; nenhuma rota RAG operacional |
 
 ---
 
 ## 6. Observabilidade e Telemetria (LangSmith)
 
 * **Projeto:** `AndradeAdvogados` configurado em `Settings.langsmith_project`.
-* **Trilhas Obrigatórias:**
-  * O pipeline de segurança já está decorado com `@traceable(name="SecurityPipeline.run", run_type="chain")`.
-  * Os nós do LangGraph devem herdar o tracing automático do LangSmith.
-  * O retriever deve registrar os chunks recuperados com seus scores para auditoria jurídica posterior.
+* **Fronteira P1 atual:** tracing externo desligado; instrumentação protegida por projeção/allowlist e testes de payload, sem mutar prova/prompts. Não habilitar tracing automático de conteúdo contratual por causa de wrappers LangChain/LangGraph.
+* **Auditoria futura:** IDs/ranks/configuração e prova, quando necessários, ficam em trilha local restrita. Exportação externa não recebe chunks, perguntas, PII, segredos, metadata arbitrária ou exceções brutas; futuras integrações devem repetir a verificação da fronteira. Métricas e categorias sanitizadas não equivalem a telemetria operacional já homologada.
 
 ---
 
@@ -239,7 +239,7 @@ A estrutura do projeto está organizada de forma modular e concisa sob o diretó
 Ao atuar neste repositório, qualquer agente de IA ou desenvolvedor deve obedecer rigorosamente aos seguintes mandamentos:
 
 1. **Nunca quebre a integridade de dados legais:** Não adicione regexes destrutivas que eliminem pontuação de CPF, CNPJ, símbolos de parágrafo (`§`) ou números de cláusulas no sanitizador.
-2. **Mantenha a abordagem de Hybrid Search:** Consultas jurídicas dependem criticamente do casamento exato provido pelo BM25 em conjunto com o Chroma. Não substitua o `EnsembleRetriever` por um retriever puramente denso.
+2. **Mantenha a abordagem de Hybrid Search:** Preservar Chroma + BM25 com normalização compartilhada e fusão determinística; o nome de uma classe LangChain não comprova esse contrato. Não substituir por busca só densa ou degradação silenciosa, nem tratar seleção por identificador como autorização.
 3. **Respeite a política de citação dos 4 elementos:** Qualquer modificação no prompt de sistema ou na geração deve preservar a obrigatoriedade de citar Contrato, Partes, Cláusula e Transcrição Literal.
-4. **Disciplina de Testes:** Todo novo módulo implementado (`cache.py`, `agent.py`, `monitoring.py`, `main.py`) deve vir acompanhado de sua respectiva suíte de testes em `tests/`, garantindo 100% de cobertura dos caminhos críticos.
-5. **Simplicidade de Infraestrutura:** Mantenha a dependência de serviços externos no mínimo indispensável, honrando a infraestrutura autossuficiente da EC2 de 16 GB.
+4. **Disciplina de Testes:** Toda implementação/mudança tem regressões dos caminhos críticos em tests/, TDD/autorrevisão e gate independente conforme HANDOFF. Não alegar 100% de cobertura sem medição ou converter fixtures em aceite jurídico/operacional.
+5. **Simplicidade de Infraestrutura:** Minimizar dependências externas conforme arquitetura-alvo e D04; EC2 de 16 GB é proposta a qualificar, não infraestrutura liberada. Nenhuma chamada externa/provisão é autorizada pela documentação de retomada.

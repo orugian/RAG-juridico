@@ -118,8 +118,8 @@ def test_version_family_helpers():
 # --------------------------------------------------------------------------- formato real
 def _docx(path: Path) -> Path:
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr("[Content_Types].xml", "<Types/>")
-        zf.writestr("word/document.xml", "<w:document/>")
+        zf.writestr(zipfile.ZipInfo("[Content_Types].xml"), "<Types/>")
+        zf.writestr(zipfile.ZipInfo("word/document.xml"), "<w:document/>")
     return path
 
 
@@ -204,7 +204,8 @@ def _doc(raw: Path, mfiles_id: int, title: str, class_name: str = "Contrato", co
     path.parent.mkdir(parents=True, exist_ok=True)
     if ext == "docx":
         with zipfile.ZipFile(path, "w") as zf:
-            zf.writestr("word/document.xml", f"<w:document>{title}{content.decode()}</w:document>")
+            # Exact-duplicate fixtures need identical bytes across ZIP clock ticks.
+            zf.writestr(zipfile.ZipInfo("word/document.xml"), f"<w:document>{title}{content.decode()}</w:document>")
     else:
         path.write_bytes(content)
     import hashlib
@@ -440,4 +441,3 @@ def test_jev_unknown_choice_maps_to_indeterminado():
 
 def test_manifest_name_constant_is_shared():
     assert MANIFEST_NAME == "manifest.jsonl"
-

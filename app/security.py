@@ -12,15 +12,19 @@ Tailored for an internal legal RAG system (contract analysis) in a law firm:
 """
 
 import re
+import hashlib
+import secrets
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
-from langsmith import traceable
+from app.telemetry import safe_trace
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.config import get_settings
+from app.contracts import AccessContext
 
 settings = get_settings()
 
@@ -39,30 +43,65 @@ limiter = Limiter(
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(api_key: Optional[str] = Security(API_KEY_HEADER)) -> str:
-    """
-    Validate the internal API key from request headers.
+def _expiration(configuration):
+    value = configuration.previous_key_valid_until
+    if not value:
+        return None
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        raise ValueError("Rotação exige prazo com timezone")
+    return result
 
-    In development mode or when no specific internal secret key is enforced in settings,
-    allows local testing smoothly. In production or when configured, enforces authorization.
-    """
-    expected_key = getattr(settings, "api_secret_key", None)
 
-    # In development mode, allow requests if no key is strictly required
-    if not settings.is_production and not expected_key:
-        return api_key or "dev-internal-user"
+def validate_auth_configuration(configuration):
+    """Call at API startup/readiness in P7; requests also enforce this gate now."""
+    query = configuration.api_secret_key.get_secret_value()
+    operator = configuration.operator_api_secret_key.get_secret_value()
+    previous = configuration.previous_api_secret_key.get_secret_value()
+    if not query:
+        if configuration.development_auth_bypass and configuration.app_env == "development":
+            return
+        raise ValueError("Credencial de consulta ausente")
+    keys = [key for key in (query, operator, previous) if key]
+    if any(not re.fullmatch(r"[!-~]{32,256}", key) for key in keys):
+        raise ValueError("Credencial deve conter 32 a 256 caracteres ASCII sem espaços")
+    if len(keys) != len(set(keys)):
+        raise ValueError("Credenciais devem ser distintas")
+    if previous and _expiration(configuration) is None:
+        raise ValueError("Rotação exige prazo explícito")
 
-    # If an expected key is configured, strictly validate against it
-    if expected_key:
-        if not api_key or api_key != expected_key:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or missing API Key. Access denied to internal legal services."
-            )
-        return api_key
 
-    # Default fallback when key is provided or running in authenticated perimeter
-    return api_key or "internal-collaborator"
+def _context(key, permissions):
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    credential = f"credential-{digest}"
+    scope = hashlib.sha256(f"internal_common:{credential}:{','.join(permissions)}:0".encode()).hexdigest()
+    return AccessContext(principal_id=credential, credential_id=credential, permissions=permissions, policy_epoch=0, access_scope_digest=scope)
+
+
+async def verify_api_key(api_key: Optional[str] = Security(API_KEY_HEADER)) -> AccessContext:
+    try:
+        validate_auth_configuration(settings)
+    except ValueError:
+        raise HTTPException(status_code=503, detail="Autenticação indisponível") from None
+    if settings.development_auth_bypass and settings.app_env == "development" and not settings.api_secret_key.get_secret_value():
+        return AccessContext(principal_id="synthetic-development", credential_id="synthetic-development", permissions=["query"], policy_epoch=0, access_scope_digest="synthetic")
+    if not isinstance(api_key, str) or not api_key or len(api_key) > 256:
+        raise HTTPException(status_code=401, detail="Credencial ausente ou inválida")
+    provided = api_key.encode("utf-8")
+    for configured, permissions in ((settings.api_secret_key.get_secret_value(), ["query"]), (settings.operator_api_secret_key.get_secret_value(), ["query", "operate"])):
+        if configured and secrets.compare_digest(provided, configured.encode()):
+            return _context(configured, permissions)
+    previous = settings.previous_api_secret_key.get_secret_value()
+    if previous and secrets.compare_digest(provided, previous.encode()) and _expiration(settings) > datetime.now(timezone.utc):
+        return _context(previous, ["query"])
+    raise HTTPException(status_code=401, detail="Credencial ausente ou inválida")
+
+
+async def verify_operator_key(api_key: Optional[str] = Security(API_KEY_HEADER)) -> AccessContext:
+    access = await verify_api_key(api_key)
+    if "operate" not in access.permissions:
+        raise HTTPException(status_code=403, detail="Operação não autorizada")
+    return access
 
 
 # =====================================================================
@@ -166,7 +205,7 @@ class SecurityPipeline:
         self.sanitizer = InputSanitizer()
         self.injection_filter = PromptInjectionFilter()
 
-    @traceable(name="SecurityPipeline.run", run_type="chain")
+    @safe_trace(name="SecurityPipeline.run", run_type="chain")
     def run(self, text: str) -> SecurityResult:
         """
         Executes all security checks and returns a structured SecurityResult.
@@ -180,7 +219,7 @@ class SecurityPipeline:
             rejection_reason=rejection_reason
         )
 
-    @traceable(name="SecurityPipeline.process", run_type="chain")
+    @safe_trace(name="SecurityPipeline.process", run_type="chain")
     def process(self, text: str) -> str:
         """
         Convenience method for FastAPI endpoints: validates the input and

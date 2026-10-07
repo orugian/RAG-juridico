@@ -1,11 +1,14 @@
 """
 Hierarchical Legal Chunker for Document Ingestion Pipeline.
 
-Transforms approved ParsedDocument instances (status == 'success') into LangChain
+Transforms technically successful ParsedDocument candidates into LangChain
 Document objects. Generates a synthetic search header in `page_content` combining
 formal instrument, qualified parties with roles and identifiers, and location,
 while strictly segregating the pure original text in `metadata["verbatim_text"]`
 for unambiguous legal citation under the 4 Elements Rule.
+
+This legacy helper does not verify human approvals or authorize publication.
+Governed citation units and index promotion remain separate pending stages.
 """
 import logging
 from typing import Any, Dict, List, Optional, Sequence
@@ -18,8 +21,11 @@ from app.ingestion.schemas import (
     DocumentBlock,
     ParsedDocument,
     PartyRole,
+    TemporalMention,
     UncertaintyFlag,
 )
+from app.ingestion.temporal import iter_date_candidates
+from app.retrieval.lexical import LEXICAL_PROFILE_VERSION, normalize_party_name
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +79,7 @@ def _build_search_header(
     metadata: ContractMetadata,
     hierarchy_label: Optional[str],
     block_type_str: str,
+    temporal_mentions: Sequence[TemporalMention] = (),
 ) -> str:
     """Build synthetic search header formatted for hybrid retrieval."""
     instrument = metadata.instrument_type or "Instrumento Não Identificado"
@@ -89,7 +96,31 @@ def _build_search_header(
     location = hierarchy_label if hierarchy_label else _format_block_type_label(block_type_str)
     lines.append(f"[Localização: {location}]")
 
+    for mention in temporal_mentions:
+        value = mention.normalized_date
+        if value is not None:
+            lines.append(f"[Data candidata não homologada: {mention.kind.value} = {value}; literal: {mention.raw_text}]")
+
     return "\n".join(lines)
+
+
+def _local_temporal_mentions(metadata: ContractMetadata, blocks: Sequence[DocumentBlock]) -> List[TemporalMention]:
+    """Keep candidate dates attached to their exact local source span only."""
+    block_map = {block.block_id: block for block in blocks}
+    mentions = []
+    for mention in metadata.temporal_mentions:
+        block = block_map.get(mention.block_id)
+        if block is None:
+            continue
+        mention = TemporalMention.model_validate(mention.model_dump())
+        if block.text_raw[mention.start:mention.end] != mention.raw_text:
+            raise ValueError("Temporal candidate does not match its source span")
+        candidates = list(iter_date_candidates(mention.raw_text))
+        if (len(candidates) != 1 or candidates[0].start != 0 or candidates[0].end != len(mention.raw_text)
+                or candidates[0].normalized_date != mention.normalized_date):
+            raise ValueError("Temporal candidate does not match its literal date")
+        mentions.append(mention)
+    return mentions
 
 
 def _extract_clean_identifiers(parties: Sequence[ContractParty]) -> List[str]:
@@ -240,9 +271,9 @@ def _group_blocks(blocks: Sequence[DocumentBlock]) -> List[Dict[str, Any]]:
     return final_groups
 
 
-def create_legal_chunks(documents: List[ParsedDocument]) -> List[Document]:
+def create_candidate_chunks(documents: List[ParsedDocument]) -> List[Document]:
     """
-    Convert approved ParsedDocument instances into LangChain Document chunks.
+    Convert technically successful candidates into legacy search chunks.
 
     Only documents with status == 'success' are processed. Any documents in quarantine
     ('review_metadata_mismatch') or failed ('failed') are ignored with a warning log.
@@ -266,16 +297,23 @@ def create_legal_chunks(documents: List[ParsedDocument]) -> List[Document]:
             )
             continue
 
+        # Models/lists may have changed since construction. Rebuild the complete
+        # snapshot so temporal labels are checked against actual local context,
+        # not only against a still-valid date token and span.
+        doc = ParsedDocument.model_validate(doc.model_dump())
+
         if not doc.blocks:
             logger.warning("Ignorando documento doc_id=%s: lista de blocos vazia.", doc.doc_id)
             continue
 
         clean_identifiers = _extract_clean_identifiers(doc.metadata.parties)
+        party_names = list(dict.fromkeys(party.name for party in doc.metadata.parties))
+        normalized_party_names = list(dict.fromkeys(normalize_party_name(name) for name in party_names))
         groups = _group_blocks(doc.blocks)
 
         for chunk_idx, grp in enumerate(groups):
             raw_texts = [
-                b.text_raw.strip()
+                b.text_raw
                 for b in grp["blocks"]
                 if b.text_raw and b.text_raw.strip()
             ]
@@ -283,10 +321,12 @@ def create_legal_chunks(documents: List[ParsedDocument]) -> List[Document]:
                 continue
 
             verbatim_text = "\n\n".join(raw_texts)
+            temporal_mentions = _local_temporal_mentions(doc.metadata, grp["blocks"])
             header = _build_search_header(
                 metadata=doc.metadata,
                 hierarchy_label=grp["hierarchy_label"],
                 block_type_str=grp["block_type"],
+                temporal_mentions=temporal_mentions,
             )
             page_content = f"{header}\n\n{verbatim_text}"
 
@@ -299,6 +339,13 @@ def create_legal_chunks(documents: List[ParsedDocument]) -> List[Document]:
                 "instrument_type": doc.metadata.instrument_type,
                 "subject_area": doc.metadata.subject_area,
                 "clean_identifiers": clean_identifiers,
+                "party_names": party_names,
+                "normalized_party_names": normalized_party_names,
+                "temporal_mentions": [mention.model_dump(mode="json") for mention in temporal_mentions],
+                "temporal_extractor_version": doc.metadata.temporal_extractor_version,
+                "block_ids": [block.block_id for block in grp["blocks"]],
+                "lexical_profile_version": LEXICAL_PROFILE_VERSION,
+                "eligibility": doc.eligibility,
                 "hierarchy_label": grp["hierarchy_label"],
                 "block_type": grp["block_type"],
                 "verbatim_text": verbatim_text,
@@ -307,4 +354,61 @@ def create_legal_chunks(documents: List[ParsedDocument]) -> List[Document]:
 
             chunks.append(Document(page_content=page_content, metadata=chunk_metadata))
 
+    return chunks
+
+
+def create_legal_chunks(documents: List[ParsedDocument], *, ledger=None, budget=None,
+                        build_requests=None, relations=(), resolutions=()) -> List[Document]:
+    """Governed boundary: physical proof and current scoped decisions are required.
+
+    Returns search projections of canonical EvidenceChunks. This neither publishes
+    an index nor resolves query-time closure; P4/P5/P6 consume canonical storage.
+    Use create_candidate_chunks explicitly for unqualified local diagnostics.
+    """
+    from copy import deepcopy
+    from pathlib import Path
+    from app.embeddings.artifacts import digest_file
+    from app.ingestion.evidence import build_evidence_chunks, validate_unit_decisions
+    if ledger is None or budget is None or build_requests is None:
+        raise ValueError("governed chunking requires ledger, Qwen budget and physical build requests")
+    if len(documents) != len(build_requests):
+        raise ValueError("governed build request coverage must be exact")
+    documents = tuple(ParsedDocument.model_validate(doc.model_dump()) for doc in documents)
+    build_requests = tuple(deepcopy(build_requests))
+    batch_ledger_digest = ledger.state_digest()
+    chunks = []
+    built_units = []
+    seen_sources = set()
+    for document, request in zip(documents, build_requests):
+        if request.source.source_id in seen_sources:
+            raise ValueError("governed build contains duplicate sources")
+        seen_sources.add(request.source.source_id)
+        result = build_evidence_chunks(document, request.source, ledger=ledger, budget=budget,
+            original_path=request.original_path, unit_review_ids=request.unit_review_ids,
+            dependencies=request.dependencies, conversion_path=request.conversion_path,
+            reference_bindings=request.reference_bindings,
+            relations=relations, resolutions=resolutions)
+        built_units.extend(result.units)
+        for chunk in result.chunks:
+            canonical = chunk.model_dump(mode="json")
+            # Complex records remain available canonically; scalar projection
+            # compatibility and generation promotion are P4's responsibility.
+            chunks.append(Document(page_content=chunk.text_search, metadata={
+                **canonical, "evidence_contract_version": "canonical-proof-v1",
+                "doc_id": document.doc_id, "formal_title": document.metadata.formal_title,
+                "clean_identifiers": _extract_clean_identifiers(chunk.parties),
+                "party_names": [party.name for party in chunk.parties],
+                "lexical_profile_version": LEXICAL_PROFILE_VERSION}))
+    # End the public batch, not only each file's builder, before returning any
+    # projection: an earlier source may change during a later file's split.
+    for request in build_requests:
+        if digest_file(Path(request.original_path)) != request.source.file_hash:
+            raise ValueError("Physical source changed during governed batch")
+        if request.source.conversion_sha256 and (request.conversion_path is None or
+                digest_file(Path(request.conversion_path)) != request.source.conversion_sha256):
+            raise ValueError("Retained conversion changed during governed batch")
+    for unit in built_units:
+        validate_unit_decisions(unit, ledger, all_units={u.unit_id: u for u in built_units})
+    if ledger.state_digest() != batch_ledger_digest:
+        raise ValueError("Review ledger changed during governed batch")
     return chunks

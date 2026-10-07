@@ -6,8 +6,11 @@ and LegalHybridRetriever with deterministic client CNPJ/CPF isolation.
 """
 
 from app.retrieval.hybrid import (
+    GovernedRetrievalResult,
+    GovernedRetriever,
     LegalHybridRetriever,
     extract_clean_identifiers_from_query,
+    plan_query,
 )
 from app.retrieval.indexer import (
     DeterministicHashEmbeddings,
@@ -16,8 +19,11 @@ from app.retrieval.indexer import (
 )
 
 __all__ = [
+    "GovernedRetrievalResult",
+    "GovernedRetriever",
     "LegalHybridRetriever",
     "extract_clean_identifiers_from_query",
+    "plan_query",
     "DeterministicHashEmbeddings",
     "build_and_save_hybrid_index",
     "load_hybrid_retriever",

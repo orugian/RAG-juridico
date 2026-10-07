@@ -2,12 +2,12 @@
 Monitoring & Structured Logging
 Production-grade metrics collection and JSON logging for Andrade Advogados RAG API.
 
-Hardened with adversarial review:
-- Native Python logging `extra={...}` extraction (avoids dropping metadata).
+Projection boundaries:
+- Logs admit only fixed events, random correlation IDs and bounded metrics.
 - Thread-safe MetricsCollector supporting concurrent EC2 workloads.
 - Strict mapping to app.models.MetricsResponse.
 - Zero-latency handling for instant in-memory cache hits.
-- Payload length truncation to prevent CloudWatch/ELK log bloat.
+- Unknown fields, contract content and exception text are dropped.
 - Context manager `track_latency` for frictionless timing in FastAPI/LangGraph.
 """
 
@@ -20,69 +20,39 @@ import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, Optional
 from uuid import UUID
-
-from langchain_core.callbacks.base import BaseCallbackHandler
 
 from app.config import get_settings
 from app.models import MetricsResponse
+from app.telemetry import SafeCallbackHandler, safe_metadata, error_category
 
 settings = get_settings()
-
-# Standard LogRecord attributes to ignore when extracting custom extra fields
-_STANDARD_LOG_RECORD_ATTRS = frozenset({
-    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-    "created", "msecs", "relativeCreated", "thread", "threadName",
-    "processName", "process", "message", "extra_data"
-})
-
-_MAX_STRING_LOG_LENGTH = 1500
-
 
 class JSONFormatter(logging.Formatter):
     """
     Format log records as structured JSON for log aggregators (CloudWatch, Datadog, ELK).
-    Safely captures standard and extra logging fields while truncating oversized payloads.
+    Projects fixed events and metadata without including arbitrary content.
     """
 
     def format(self, record: logging.LogRecord) -> str:
+        allowed_messages = {"retrieval_identifier_filter", "retrieval_identifier_empty", "retrieval_dense_error", "retrieval_bm25_error", "request_completed", "request_started"}
         log_obj: Dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
-            "message": record.getMessage(),
-            "logger": record.name,
-            "module": record.module,
-            "function": record.funcName,
-            "lineno": record.lineno,
-            "process": record.process,
-            "thread": record.thread,
+            "message": record.msg if isinstance(record.msg, str) and record.msg in allowed_messages else "event_redacted",
+            "logger": "andrade-advogados-api",
         }
-
-        # 1. Extrai campos extras explícitos passados via extra_data (compatibilidade legada)
-        if hasattr(record, "extra_data") and isinstance(record.extra_data, dict):
-            for k, v in record.extra_data.items():
-                log_obj[k] = self._truncate_value(v)
-
-        # 2. Extrai campos extras passados via padrão nativo logger.info("...", extra={"user": "...", ...})
-        for key, val in record.__dict__.items():
-            if key not in _STANDARD_LOG_RECORD_ATTRS and not key.startswith("_"):
-                log_obj[key] = self._truncate_value(val)
-
-        # 3. Tratamento de exceções
+        log_obj.update(safe_metadata(record.__dict__))
+        request_id = getattr(record, "request_id", None)
+        try:
+            if request_id:
+                log_obj["request_id"] = str(UUID(str(request_id)))
+        except ValueError:
+            pass
         if record.exc_info:
-            log_obj["exception"] = self.formatException(record.exc_info)
-
+            log_obj["error_category"] = error_category(record.exc_info[1])
         return json.dumps(log_obj, default=str, ensure_ascii=False)
-
-    @classmethod
-    def _truncate_value(cls, val: Any) -> Any:
-        """Evita payload bloat truncando strings gigantes (ex.: contratos inteiros colados em logs)."""
-        if isinstance(val, str) and len(val) > _MAX_STRING_LOG_LENGTH:
-            return val[:_MAX_STRING_LOG_LENGTH] + f"... [truncated {len(val)} chars]"
-        return val
-
 
 def get_logger(name: str = "andrade-advogados-api") -> logging.Logger:
     """Creates or returns a centralized structured JSON logger configured with app settings."""
@@ -231,7 +201,7 @@ REDACTED_CPF = "[REDACTED_CPF]"
 REDACTED_CNPJ = "[REDACTED_CNPJ]"
 
 # Regex patterns for Brazilian Tax Identifiers (formatted and raw digits)
-_CNPJ_PATTERN = re.compile(r"(?<!\d)(\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})(?!\d)")
+_CNPJ_PATTERN = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2}\.?[A-Z0-9]{3}\.?[A-Z0-9]{3}/?[A-Z0-9]{4}-?[0-9]{2})(?![A-Z0-9])", re.IGNORECASE | re.ASCII)
 _CPF_PATTERN = re.compile(r"(?<!\d)(\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d)")
 
 # Known contractual keys containing sensitive legal text
@@ -324,6 +294,7 @@ def sanitize_telemetry_payload(
     redaction_placeholder: str = REDACTED_PII_PROTECTED,
 ) -> Any:
     """
+    Legacy diagnostic helper, NOT the external privacy boundary (allowlist required).
     Removes or masks CPFs, CNPJs and known contractual fields (verbatim_text,
     page_content, text_raw) from payloads before emitting telemetry or logging.
     Supports nested dicts, lists, tuples, and strings.
@@ -363,248 +334,8 @@ def sanitize_telemetry_payload(
     return data
 
 
-class SafeLangSmithCallbackHandler(BaseCallbackHandler):
-    """
-    Safe LangSmith callback handler ensuring LGPD compliance and OAB secrecy.
-    Intercepts on_chain_start/end and on_llm_start/end events:
-    - Redacts contractual inputs with [REDACTED_INPUT_PII_PROTECTED] when hide_inputs=True.
-    - Redacts contractual outputs with [REDACTED_OUTPUT_PII_PROTECTED] when hide_outputs=True.
-    - Preserves critical analytical metadata: latencies, tokens, step names, timestamps, error types.
-    """
-
-    def __init__(
-        self,
-        hide_inputs: bool = True,
-        hide_outputs: bool = True,
-    ):
-        super().__init__()
-        self.hide_inputs: bool = hide_inputs
-        self.hide_outputs: bool = hide_outputs
-        self._runs: Dict[str, Dict[str, Any]] = {}
-
-    @property
-    def runs(self) -> Dict[str, Dict[str, Any]]:
-        return self._runs
-
-    def get_run(self, run_id: Union[UUID, str]) -> Optional[Dict[str, Any]]:
-        return self._runs.get(str(run_id))
-
-    def _sanitize_inputs(self, inputs: Any) -> Any:
-        if not self.hide_inputs:
-            return inputs
-        if isinstance(inputs, dict):
-            sanitized: Dict[str, Any] = {}
-            for k, v in inputs.items():
-                if isinstance(k, str) and k.lower() in INPUT_CONTRACTUAL_KEYS:
-                    sanitized[k] = REDACTED_INPUT_PII_PROTECTED
-                else:
-                    sanitized[k] = sanitize_telemetry_payload(
-                        v, redaction_placeholder=REDACTED_INPUT_PII_PROTECTED
-                    )
-            return sanitized
-        return sanitize_telemetry_payload(inputs, redaction_placeholder=REDACTED_INPUT_PII_PROTECTED)
-
-    def _sanitize_outputs(self, outputs: Any) -> Any:
-        if not self.hide_outputs:
-            return outputs
-        if isinstance(outputs, dict):
-            sanitized: Dict[str, Any] = {}
-            for k, v in outputs.items():
-                if isinstance(k, str) and k.lower() in OUTPUT_CONTRACTUAL_KEYS:
-                    sanitized[k] = REDACTED_OUTPUT_PII_PROTECTED
-                else:
-                    sanitized[k] = sanitize_telemetry_payload(
-                        v, redaction_placeholder=REDACTED_OUTPUT_PII_PROTECTED
-                    )
-            return sanitized
-        return sanitize_telemetry_payload(outputs, redaction_placeholder=REDACTED_OUTPUT_PII_PROTECTED)
-
-    def on_chain_start(
-        self,
-        serialized: Optional[Dict[str, Any]],
-        inputs: Dict[str, Any],
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> Any:
-        step_name = ""
-        if serialized and isinstance(serialized, dict):
-            step_name = serialized.get("name") or (serialized.get("id") or ["chain"])[-1]
-        if not step_name:
-            step_name = kwargs.get("name", "chain")
-
-        sanitized_inputs = self._sanitize_inputs(inputs)
-        if self.hide_inputs and isinstance(inputs, dict):
-            inputs.clear()
-            inputs.update(sanitized_inputs)
-
-        self._runs[str(run_id)] = {
-            "run_id": str(run_id),
-            "parent_run_id": str(parent_run_id) if parent_run_id else None,
-            "step_name": step_name,
-            "name": step_name,
-            "run_type": "chain",
-            "tags": list(tags) if tags else [],
-            "metadata": dict(metadata) if metadata else {},
-            "start_time": time.time(),
-            "start_perf": time.perf_counter(),
-            "inputs": sanitized_inputs,
-            "outputs": None,
-            "latency_ms": None,
-            "tokens": None,
-            "error": None,
-            "error_type": None,
-            "status": "running",
-        }
-
-    def on_chain_end(
-        self,
-        outputs: Dict[str, Any],
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **kwargs: Any,
-    ) -> Any:
-        sanitized_outputs = self._sanitize_outputs(outputs)
-        if self.hide_outputs and isinstance(outputs, dict):
-            outputs.clear()
-            outputs.update(sanitized_outputs)
-
-        run = self._runs.get(str(run_id))
-        end_perf = time.perf_counter()
-        if run:
-            run["end_time"] = time.time()
-            run["latency_ms"] = round((end_perf - run["start_perf"]) * 1000, 2)
-            run["outputs"] = sanitized_outputs
-            run["status"] = "success"
-        else:
-            self._runs[str(run_id)] = {
-                "run_id": str(run_id),
-                "parent_run_id": str(parent_run_id) if parent_run_id else None,
-                "step_name": kwargs.get("name", "chain"),
-                "run_type": "chain",
-                "end_time": time.time(),
-                "latency_ms": 0.0,
-                "outputs": sanitized_outputs,
-                "status": "success",
-            }
-
-    def on_chain_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        **kwargs: Any,
-    ) -> Any:
-        run = self._runs.get(str(run_id))
-        end_perf = time.perf_counter()
-        if run:
-            run["end_time"] = time.time()
-            if "start_perf" in run:
-                run["latency_ms"] = round((end_perf - run["start_perf"]) * 1000, 2)
-            run["status"] = "error"
-            run["error"] = str(error)
-            run["error_type"] = type(error).__name__
-
-    def on_llm_start(
-        self,
-        serialized: Optional[Dict[str, Any]],
-        prompts: List[str],
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        **kwargs: Any,
-    ) -> Any:
-        step_name = ""
-        if serialized and isinstance(serialized, dict):
-            step_name = serialized.get("name") or (serialized.get("id") or ["llm"])[-1]
-        if not step_name:
-            step_name = kwargs.get("name", "llm")
-
-        if self.hide_inputs:
-            sanitized_prompts = [REDACTED_INPUT_PII_PROTECTED for _ in prompts]
-            if isinstance(prompts, list):
-                for i in range(len(prompts)):
-                    prompts[i] = REDACTED_INPUT_PII_PROTECTED
-        else:
-            sanitized_prompts = list(prompts)
-
-        self._runs[str(run_id)] = {
-            "run_id": str(run_id),
-            "parent_run_id": str(parent_run_id) if parent_run_id else None,
-            "step_name": step_name,
-            "name": step_name,
-            "run_type": "llm",
-            "tags": list(tags) if tags else [],
-            "metadata": dict(metadata) if metadata else {},
-            "start_time": time.time(),
-            "start_perf": time.perf_counter(),
-            "inputs": {"prompts": sanitized_prompts},
-            "outputs": None,
-            "latency_ms": None,
-            "tokens": None,
-            "error": None,
-            "error_type": None,
-            "status": "running",
-        }
-
-    def on_llm_end(
-        self,
-        response: Any,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> Any:
-        end_perf = time.perf_counter()
-        token_usage = {}
-        if hasattr(response, "llm_output") and isinstance(response.llm_output, dict):
-            token_usage = (
-                response.llm_output.get("token_usage")
-                or response.llm_output.get("usage")
-                or {}
-            )
-
-        if self.hide_outputs and hasattr(response, "generations") and response.generations:
-            for gen_list in response.generations:
-                for gen in gen_list:
-                    if hasattr(gen, "text"):
-                        gen.text = REDACTED_OUTPUT_PII_PROTECTED
-
-        run = self._runs.get(str(run_id))
-        if run:
-            run["end_time"] = time.time()
-            if "start_perf" in run:
-                run["latency_ms"] = round((end_perf - run["start_perf"]) * 1000, 2)
-            run["tokens"] = token_usage
-            run["status"] = "success"
-            run["outputs"] = {"generations": REDACTED_OUTPUT_PII_PROTECTED if self.hide_outputs else str(response)}
-
-    def on_llm_error(
-        self,
-        error: BaseException,
-        *,
-        run_id: UUID,
-        parent_run_id: Optional[UUID] = None,
-        tags: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> Any:
-        run = self._runs.get(str(run_id))
-        end_perf = time.perf_counter()
-        if run:
-            run["end_time"] = time.time()
-            if "start_perf" in run:
-                run["latency_ms"] = round((end_perf - run["start_perf"]) * 1000, 2)
-            run["status"] = "error"
-            run["error"] = str(error)
-            run["error_type"] = type(error).__name__
+# Compatibility name now delegates to a bounded non-mutating projection.
+SafeLangSmithCallbackHandler = SafeCallbackHandler
 
 
 __all__ = [

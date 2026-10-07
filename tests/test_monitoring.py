@@ -56,10 +56,10 @@ def test_json_formatter_standard_fields():
     data = json.loads(formatted)
 
     assert data["level"] == "INFO"
-    assert data["message"] == "Consulta contratual iniciada"
-    assert data["logger"] == "test-logger"
+    assert data["message"] == "event_redacted"
+    assert data["logger"] == "andrade-advogados-api"
     assert "timestamp" in data
-    assert data["module"] == "agent"
+    assert "module" not in data
 
 
 def test_json_formatter_extra_metadata_and_truncation():
@@ -84,10 +84,9 @@ def test_json_formatter_extra_metadata_and_truncation():
     formatted = formatter.format(record)
     data = json.loads(formatted)
 
-    assert data["user"] == "advogado_1"
-    assert data["thread_id"] == "contrato-114-2024"
-    assert "... [truncated" in data["contract_payload"]
-    assert len(data["contract_payload"]) < len(giant_contract_text)
+    assert "user" not in data
+    assert "thread_id" not in data
+    assert "contract_payload" not in data
 
 
 def test_metrics_collector_empty_state(collector: MetricsCollector):

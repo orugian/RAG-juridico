@@ -19,11 +19,12 @@ if str(_PROJECT_ROOT) not in sys.path:
 from unittest.mock import MagicMock
 import pytest
 from langchain_core.messages import AIMessage
-from app.agent import ProductionAgent, production_agent
+from app.agent import ProductionAgent, get_production_agent
 
 
 def test_agent_graph_compilation():
     """Valida se o StateGraph do LangGraph foi compilado com todos os nós e arestas válidos."""
+    production_agent = get_production_agent()
     assert production_agent.graph is not None
     # Verifica nós presentes no grafo
     nodes = production_agent.graph.nodes
@@ -32,9 +33,10 @@ def test_agent_graph_compilation():
     assert "error" in nodes
 
 
+@pytest.mark.online
 def test_agent_successful_primary_invocation():
     """Valida se a invocação padrão utiliza o modelo primário com sucesso."""
-    result = production_agent.invoke(
+    result = get_production_agent().invoke(
         "Qual o seu propósito no escritório Andrade Advogados?",
         thread_id="test-thread-01"
     )
@@ -100,7 +102,7 @@ def run_agent_demo():
     print(f"1. Pergunta enviada: {repr(query)}")
     print("2. Processando via StateGraph (Primary: Qwen 3.8 Flash)...")
 
-    res = production_agent.invoke(query, thread_id="demo-cli-01")
+    res = get_production_agent().invoke(query, thread_id="demo-cli-01")
 
     print(f"3. Modelo utilizado: {res['model_used']}")
     print(f"4. Resposta do Agente:\n\n{res['response']}\n")

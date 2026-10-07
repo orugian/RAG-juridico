@@ -13,6 +13,7 @@ status='review_metadata_mismatch', preventing unverified data from auto-indexing
 import hashlib
 import re
 import unicodedata
+from app.identifiers import normalize_identifier, extract_identifier_candidates
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -217,8 +218,10 @@ def _extract_mfiles_cnpj(mfiles_record: Dict[str, Any]) -> Optional[str]:
 
     if isinstance(val, dict):
         val = val.get("DisplayValue") or val.get("value")
-    digits = _extract_digits(str(val) if val else "")
-    return digits if len(digits) in (11, 14) else None
+    try:
+        return normalize_identifier(str(val)) if val else None
+    except ValueError:
+        return None
 
 
 def _is_client_match(
@@ -235,11 +238,10 @@ def _is_client_match(
     # 1. Clean CNPJ/CPF check
     if party.clean_identifier:
         mfiles_explicit_cnpj = _extract_mfiles_cnpj(mfiles_record)
-        if mfiles_explicit_cnpj and party.clean_identifier == mfiles_explicit_cnpj:
-            return True
+        if mfiles_explicit_cnpj:
+            return party.clean_identifier == mfiles_explicit_cnpj
 
-        client_digits = _extract_digits(mfiles_client)
-        if party.clean_identifier in client_digits:
+        if party.clean_identifier in extract_identifier_candidates(mfiles_client):
             return True
 
     # 2. Case-insensitive raw substring match
@@ -427,6 +429,7 @@ def parse_single_document(
     doc_id: Optional[int] = None,
     doc_version: int = 1,
     quarantine_on_no_parties: bool = True,
+    parse_route: Optional[str] = None,
 ) -> ParsedDocument:
     """
     Parse a single legal document file and reconcile its metadata against M-Files.
@@ -472,17 +475,17 @@ def parse_single_document(
         file_hash = _compute_sha256(path)
         suffix = path.suffix.lower()
 
-        if suffix == ".docx":
+        if parse_route == "docx" or (parse_route is None and suffix == ".docx"):
             parser_name = "docx_parser"
             blocks = extract_docx_blocks(
                 path, doc_id=effective_doc_id, doc_version=effective_doc_version
             )
-        elif suffix in (".doc", ".rtf", ".wpd"):
+        elif parse_route == "libreoffice" or (parse_route is None and suffix in (".doc", ".rtf", ".wpd")):
             parser_name = "legacy_parser"
             blocks = extract_legacy_blocks(
                 path, doc_id=effective_doc_id, doc_version=effective_doc_version
             )
-        elif suffix == ".pdf":
+        elif parse_route == "pdf" or (parse_route is None and suffix == ".pdf"):
             parser_name = "pdf_parser"
             blocks = extract_pdf_blocks(
                 path, doc_id=effective_doc_id, doc_version=effective_doc_version

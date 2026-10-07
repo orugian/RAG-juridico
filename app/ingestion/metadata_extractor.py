@@ -11,7 +11,9 @@ Deterministic and semantic extraction of canonical contract metadata from Docume
 """
 
 import re
+from app.identifiers import normalize_identifier
 from typing import List, Optional, Tuple
+from app.ingestion.temporal import TEMPORAL_EXTRACTOR_VERSION, extract_temporal_mentions, summarize_execution_date
 
 from app.ingestion.schemas import (
     BlockType,
@@ -24,11 +26,11 @@ from app.ingestion.schemas import (
 # ---------------------------------------------------------------------------
 # Regular Expressions: Identifiers (CNPJ / CPF)
 # ---------------------------------------------------------------------------
-_CNPJ_FORMATTED = re.compile(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b")
+_CNPJ_FORMATTED = re.compile(r"\b[A-Z0-9]{2}\.[A-Z0-9]{3}\.[A-Z0-9]{3}/[A-Z0-9]{4}-[0-9]{2}\b", re.IGNORECASE | re.ASCII)
 _CPF_FORMATTED = re.compile(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b")
 
 _CNPJ_UNFORMATTED = re.compile(
-    r"(?:CNPJ|C\.N\.P\.J\.)(?:\/MF)?\s*(?:sob\s+o\s+n[º°\.]*)?\s*(\d{14})\b",
+    r"(?:CNPJ|C\.N\.P\.J\.)(?:\/MF)?\s*(?:sob\s+o\s+n[º°\.]*)?\s*([A-Z0-9]{12}[0-9]{2})\b",
     re.IGNORECASE,
 )
 _CPF_UNFORMATTED = re.compile(
@@ -182,32 +184,6 @@ _ROLE_EXPLICIT_PATTERNS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Regular Expressions: Execution Date
-# ---------------------------------------------------------------------------
-_MONTHS_MAP = {
-    "janeiro": 1,
-    "fevereiro": 2,
-    "março": 3,
-    "marco": 3,
-    "abril": 4,
-    "maio": 5,
-    "junho": 6,
-    "julho": 7,
-    "agosto": 8,
-    "setembro": 9,
-    "outubro": 10,
-    "novembro": 11,
-    "dezembro": 12,
-}
-
-_DATE_TEXT_PATTERN = re.compile(
-    r"\b(?:aos\s+)?(\d{1,2})(?:º)?(?:\s+dias)?\s+(?:do\s+mês\s+)?de\s+([a-zA-ZçÇ]+)\s+de\s+(\d{4})\b",
-    re.IGNORECASE,
-)
-_DATE_NUM_PATTERN = re.compile(r"\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b")
-_DATE_ISO_PATTERN = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
-
-# ---------------------------------------------------------------------------
 # Regular Expressions: Object Extraction
 # ---------------------------------------------------------------------------
 _OBJECT_HEADING_STRIP = re.compile(
@@ -303,25 +279,25 @@ def _extract_identifiers(segment_text: str) -> Tuple[Optional[str], Optional[str
     m_cnpj = _CNPJ_FORMATTED.search(principal_text)
     if m_cnpj:
         raw_val = m_cnpj.group(0)
-        clean_val = re.sub(r"\D", "", raw_val)
+        clean_val = normalize_identifier(raw_val)
         return clean_val, raw_val
 
     m_cnpj_unf = _CNPJ_UNFORMATTED.search(principal_text)
     if m_cnpj_unf:
-        clean_val = m_cnpj_unf.group(1)
-        return clean_val, clean_val
+        raw_val = m_cnpj_unf.group(1)
+        return normalize_identifier(raw_val), raw_val
 
     # 3. If no CNPJ in principal text, search whole segment for CNPJ
     m_cnpj_seg = _CNPJ_FORMATTED.search(segment_text)
     if m_cnpj_seg:
         raw_val = m_cnpj_seg.group(0)
-        clean_val = re.sub(r"\D", "", raw_val)
+        clean_val = normalize_identifier(raw_val)
         return clean_val, raw_val
 
     m_cnpj_seg_unf = _CNPJ_UNFORMATTED.search(segment_text)
     if m_cnpj_seg_unf:
-        clean_val = m_cnpj_seg_unf.group(1)
-        return clean_val, clean_val
+        raw_val = m_cnpj_seg_unf.group(1)
+        return normalize_identifier(raw_val), raw_val
 
     # 4. If NO CNPJ exists anywhere, check for natural person CPF
     m_cpf = _CPF_FORMATTED.search(principal_text)
@@ -335,6 +311,8 @@ def _extract_identifiers(segment_text: str) -> Tuple[Optional[str], Optional[str
         clean_val = m_cpf_unf.group(1)
         return clean_val, clean_val
 
+    if rep_text:
+        return None, None  # never promote the representative's CPF
     m_cpf_seg = _CPF_FORMATTED.search(segment_text)
     if m_cpf_seg:
         raw_val = m_cpf_seg.group(0)
@@ -603,60 +581,8 @@ def _extract_object_summary(blocks: List[DocumentBlock]) -> Optional[str]:
 
 
 def _extract_execution_date(blocks: List[DocumentBlock]) -> Optional[str]:
-    """Locate closing/signature blocks and extract execution date normalized to ISO YYYY-MM-DD."""
-    # Priority 1: SIGNATURE blocks
-    candidate_blocks = [b for b in blocks if b.block_type == BlockType.SIGNATURE]
-
-    # Priority 2: Last 5 blocks of the document (reverse order)
-    if not candidate_blocks:
-        candidate_blocks = list(reversed(blocks[-5:]))
-    else:
-        candidate_blocks = list(reversed(candidate_blocks))
-
-    for b in candidate_blocks:
-        text = b.text_raw
-
-        # 1. Por extenso: "10 de maio de 2024" or "aos 15 dias do mês de março de 2023"
-        m_txt = _DATE_TEXT_PATTERN.search(text)
-        if m_txt:
-            day_str, month_str, year_str = m_txt.groups()
-            month_num = _MONTHS_MAP.get(month_str.lower())
-            if month_num:
-                try:
-                    day = int(day_str)
-                    year = int(year_str)
-                    if 1 <= day <= 31 and 1900 <= year <= 2100:
-                        return f"{year:04d}-{month_num:02d}-{day:02d}"
-                except ValueError:
-                    pass
-
-        # 2. DD/MM/YYYY
-        m_num = _DATE_NUM_PATTERN.search(text)
-        if m_num:
-            day_str, month_str, year_str = m_num.groups()
-            try:
-                day = int(day_str)
-                month = int(month_str)
-                year = int(year_str)
-                if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
-                    return f"{year:04d}-{month:02d}-{day:02d}"
-            except ValueError:
-                pass
-
-        # 3. ISO YYYY-MM-DD
-        m_iso = _DATE_ISO_PATTERN.search(text)
-        if m_iso:
-            year_str, month_str, day_str = m_iso.groups()
-            try:
-                year = int(year_str)
-                month = int(month_str)
-                day = int(day_str)
-                if 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100:
-                    return f"{year:04d}-{month:02d}-{day:02d}"
-            except ValueError:
-                pass
-
-    return None
+    """Compatibility helper: only non-conflicting signature candidates qualify."""
+    return summarize_execution_date(extract_temporal_mentions(blocks))
 
 
 def extract_contract_metadata(blocks: List[DocumentBlock]) -> ContractMetadata:
@@ -677,6 +603,7 @@ def extract_contract_metadata(blocks: List[DocumentBlock]) -> ContractMetadata:
             instrument_type="Outro",
             parties=[],
             execution_date=None,
+            temporal_extractor_version=TEMPORAL_EXTRACTOR_VERSION,
             object_summary=None,
             mfiles_divergence_flags=[],
         )
@@ -690,8 +617,9 @@ def extract_contract_metadata(blocks: List[DocumentBlock]) -> ContractMetadata:
     # 3. Extract Object Summary
     object_summary = _extract_object_summary(blocks)
 
-    # 4. Extract Execution Date
-    execution_date = _extract_execution_date(blocks)
+    # 4. Preserve every local date candidate; the legacy summary is conservative.
+    temporal_mentions = extract_temporal_mentions(blocks)
+    execution_date = summarize_execution_date(temporal_mentions)
 
     # 5. Classify Instrument Type
     preamble_snip = " ".join(b.text_raw for b in blocks if b.block_type == BlockType.PREAMBLE)
@@ -701,12 +629,16 @@ def extract_contract_metadata(blocks: List[DocumentBlock]) -> ContractMetadata:
     divergence_flags: List[str] = []
     if not parties:
         divergence_flags.append("parties_not_identified")
+    if len({m.normalized_date for m in temporal_mentions if m.kind == "signature" and m.normalized_date}) > 1:
+        divergence_flags.append("execution_date_conflict")
 
     return ContractMetadata(
         formal_title=formal_title,
         instrument_type=instrument_type,
         parties=parties,
         execution_date=execution_date,
+        temporal_mentions=temporal_mentions,
+        temporal_extractor_version=TEMPORAL_EXTRACTOR_VERSION,
         object_summary=object_summary,
         mfiles_divergence_flags=divergence_flags,
     )

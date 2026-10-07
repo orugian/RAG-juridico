@@ -723,7 +723,7 @@ def main() -> None:
     cfg = CurationConfig(calibrated_snapshot=settings.jev_calibrated_snapshot)
     overrides = load_overrides(out_dir / OVERRIDES_FILE)
     classifier = None if args.no_model else JevClassifier(
-        api_key=settings.openai_api_key,
+        api_key=settings.openai_api_key.get_secret_value(),
         cache_path=out_dir / "jev_cache.jsonl",
         model=settings.jev_model,
         url=settings.jev_decisions_url,

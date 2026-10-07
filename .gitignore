@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Pytest cache
+.pytest_cache/
+
 # Data / RAG artifacts
 data/
 m-files/acesso.md

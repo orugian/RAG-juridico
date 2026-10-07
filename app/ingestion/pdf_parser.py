@@ -302,7 +302,7 @@ def extract_pdf_blocks(
                 doc_ium = pypdfium2.PdfDocument(str(path))
                 page_ium = doc_ium[page_idx]
                 pil_image = page_ium.render(scale=2.0).to_pil()
-                ocr_text = pytesseract.image_to_string(pil_image, lang=ocr_lang) or ""
+                ocr_text = pytesseract.image_to_string(pil_image, lang=ocr_lang, timeout=30) or ""
             except (pytesseract.TesseractNotFoundError, Exception) as e:
                 logger.warning(
                     "OCR falhou ou Tesseract indisponível na página %d de '%s': %s",
@@ -323,7 +323,7 @@ def extract_pdf_blocks(
         # Split page text into blocks
         page_block_texts = _split_page_into_blocks(page_text, state)
 
-        for text_raw in page_block_texts:
+        for page_block_index, text_raw in enumerate(page_block_texts):
             if not text_raw.strip():
                 continue
 
@@ -360,6 +360,7 @@ def extract_pdf_blocks(
                 text_search=text_search,
                 table_metadata=None,
                 spans=[{"start": 0, "end": len(text_raw)}],
+                source_locator={"format": "pdf", "page": page_idx + 1, "page_block_index": page_block_index, "extraction": "ocr" if is_scanned else "native", "verification": "unreviewed"},
                 uncertainty_flags=list(page_uncertainty_flags),
             )
             blocks.append(block)
