@@ -28,15 +28,26 @@ Cada entrega segue Red → Green → Refactor e revisão independente por agente
 | P3/G3 pleno | Pendente | Comparação e avaliação documental, Chroma e qualificação operacional; desempenho CPU/AWS não liberado |
 | P4 — gerações/paridade/journal | Aprovado subgate técnico sintético | [Decomposição/evidências/14 identidades](2026-10-07-p4-evidencias.md) / [parecer](../reviews/2026-10-07-exec-p4.md); 9,22/10 rodada 3 final, J1/J2/J3 fechados; reprovações 8,78/8,80 históricas. Head 1.079 integrados finais; juiz 246 focais e 26 cenários próprios aprovados nas execuções válidas |
 | P4/G4 operacional | Pendente | D04/fonte durável externa/anchor e domínios físicos de falha não aprovados; nenhum corpus real ou API liberado |
-| P5 — recuperação avaliada | Não iniciado | Continuidade técnica sugerida só em fixtures sintéticas; relevância/G5 humano e corpus/gabarito pendentes |
+| P5 — recuperação avaliada | Aprovado subgate técnico sintético | [Evidências](2026-10-07-p5-evidencias.md) / [parecer](../reviews/2026-10-07-exec-p5.md); juiz 9,33/10, rodada 1 final; 1.090 passaram |
+| P6 — grafo governado e grounding | Aprovado subgate técnico sintético | [Evidências](2026-10-07-p6-evidencias.md) / [parecer](../reviews/2026-10-07-exec-p6.md); juiz 9,35/10, rodada 2 final; J1 a J8 fechados; 1.283 passaram |
+| P7 — API, cache governado e concorrência | Aprovado subgate técnico sintético | [Evidências](2026-10-07-p7-evidencias.md) / [parecer](../reviews/2026-10-07-exec-p7.md); juiz 9,37/10, rodada 2 final; P7-J1 fechado; R1 8,94 histórica; 1.556 passaram Head, 319 juiz |
+| P8 — homologação ponta a ponta | **Aprovado subgate técnico sintético — COM RESSALVAS** | [Evidências](2026-10-08-p8-evidencias.md) / juiz independente **9,24/10, rodada 1 final**, nenhum alto/crítico aberto. 16 casos × 3 transportes × 2 backends Qwen/Chroma reais, avaliador estrito, carga/segurança e delta de admission autorizado. **Ressalvas abertas:** `WinError 5` intermitente no rename do build (MÉDIO, em código P4 aceito intocado, a reavaliar em Linux/D04/P9) e janela fixa de 8 s no harness de carga (BAIXO-MÉDIO) — regressão integral oficial **não verde**. G5/G8 humanos, relevância jurídica, corpus/gabarito humanos, D04, Linux, SLO e AWS/P9 **pendentes** |
 
-Não há índice de produção, API operacional ou corpus homologado nesta altura.
+Não há índice de produção, API operacional ou corpus homologado nesta altura. API local técnica sintética está implementada e aprovada, sem serviço de produção aberto a usuários.
 
 Na campanha lexical/temporal, após as três reprovações iniciais, o usuário autorizou explicitamente duas rodadas adicionais, máximo cinco total. A rodada 4 foi aprovada com 9,18/10, sem alto/crítico aberto identificado; campanha encerrada, quinta não necessária. A execução posterior P3B implementou builders/proveniência/ledger/fechamento/Qwen. Rodadas 1/2 reprovaram 8,74/8,91; candidato 3 corrigido via TDD foi aprovado **9,20 na rodada 3 final**, J1/J2 fechados, nenhum alto/crítico aberto identificado. 833 testes offline do Head; 296 testes focais próprios, seis probes físicos Qwen e 128 combinações do juiz. [HANDOFF.md](../HANDOFF.md) atualizado, histórico/identidades preservados. P4 não iniciado nesta entrega; continuidade técnica sugerida somente com fixtures sintéticas. Nenhuma quarta rodada ou promoção G3/corpus/produção autorizada pelo gate atual. Não reexecutar etapas aprovadas nem usar relatórios Qwen históricos como identidade do código posterior.
 
 ## Fechamento P4 — 07/10/2026
 
 Atualização de 07/10: P4 executado após aceite P3B, com TDD/Seniores/frentes independentes e juiz. R1/R2 reprovaram 8,78/8,80; C3 aceito 9,22 na rodada 3 final, J1/J2/J3 fechados, nenhum alto/crítico aberto identificado. Identidade aceita: quatorze hashes (doze C2 com duas substituições C3), parecer final d2d5941a52e6c89441d23eb3472c561c537edbf448f086afa51b4b9dcee2983d. O trecho anterior “P4 não iniciado nesta entrega” refere-se ao fechamento P3B de 06/10, não ao estado atual. CONTEXT/HANDOFF atualizados; P5 técnico sintético sugerido, não implementado. G4 operacional/D04, corpus/revisão humana, G3 pleno, política OpenRouter e SLO/Linux/AWS seguem pendentes.
+
+## Fechamento P5 e P6 — 07/10/2026
+
+P5 técnico sintético aprovado em 07/10: 9,33/10 na rodada 1 final; 5 identidades congeladas, 1.090 testes integrados. P6 técnico sintético aprovado em 07/10: 9,35/10 na rodada 2 final, J1 a J8 fechados; 18 identidades congeladas, 1.283 testes integrados.
+
+## Fechamento P7 — 08/10/2026
+
+P7 técnico sintético aprovado em 08/10/2026: R1 reprovou C1 com 8,94/10 devido a P7-J1 alto (controles encerravam autorização na admissão). Candidato C2 implementou ports síncronos de controle com encode pré-guard e assinatura HMAC, reautenticação em voo sob commit e pré-ASGI start, leases físicos segurando escritores até o desenrolamento ASGI e pools bounded separados. Candidato C2 aprovado pelo juiz independente com **9,37/10 na rodada 2 final**, achado P7-J1 formalmente fechado e zero achados altos ou críticos abertos. Regressão oficial Head: 1.556 passaram, 1 online deselecionado, 3 avisos legados em 1.195,43 s; suíte focal independente do juiz: 319 passaram em 485,35 s. Próxima etapa: P8 — Homologação ponta a ponta (preparação técnica sintética). G2, G3 pleno, G4 operacional, D04, G5/P8 humano/G8 documental e P9 seguem pendentes.
 
 ## Encerramento documental da sessão — 07/10/2026
 

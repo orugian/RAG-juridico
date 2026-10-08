@@ -1,6 +1,8 @@
 # CONTEXT.md — Sistema RAG de Produção: Andrade Advogados
 
-> **Estado atual em 07/10/2026:** [P6 técnico sintético](docs/execution/2026-10-07-p6-evidencias.md) **aprovado 9,35/10 na rodada 2 final**, nenhum alto/crítico aberto identificado no recorte auditado; todos os 8 achados J1 a J8 fechados. Candidato 2: 18 identidades congeladas (`app/answer_contracts.py`, `app/terms.py`, `app/prompts.py`, `app/generators.py`, `app/grounding.py`, `app/rendering.py`, `app/generation.py`, `tests/p6_corpus.py` e testes associados). Regressão offline integrada final: **1.283 testes passaram, um online deselecionado, dois avisos legados em 551,12 s (0:09:11)**, via comando com `--qwen-artifact data/models/qwen3-embedding-0.6b-97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`. [Parecer formal](docs/reviews/2026-10-07-exec-p6.md). As 38 identidades anteriores de P0 a P5 permanecem 100% intocadas. Próxima frente: **P7 — API HTTP/FastAPI, cache governado, streaming e concorrência**. Nenhum G4 operacional/D04/corpus real/G3 pleno/SLO/Linux/AWS liberado.
+> **Histórico do aceite P7 em 08/10/2026:** [P7 técnico sintético](docs/execution/2026-10-07-p7-evidencias.md) **aprovado 9,37/10 na rodada 2 final**, nenhum alto/crítico aberto identificado no recorte auditado; achado P7-J1 fechado com sucesso. [Parecer formal R2](docs/reviews/2026-10-07-exec-p7.md). Candidato 2: 12 identidades congeladas (`app/main.py`, `app/cache.py`, `app/http_contracts.py`, `app/answer_runtime.py`, `app/security.py`, `app/telemetry.py`, `docs/P7_API.md` e testes associados). Regressão offline integrada final Head: **1.556 testes passaram, um online deselecionado, três avisos legados em 1.195,43 s (0:19:55)** via `--qwen-artifact data/models/qwen3-embedding-0.6b-97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3`. Suíte focal independente do juiz: **319 testes passaram em 485,35 s**. As 49 identidades aceitas de P3B–P6 permanecem 100% intocadas. Próxima frente concluída nesta retomada; **P8 — Homologação ponta a ponta (preparação técnica sintética) APROVADO COM RESSALVAS pelo juiz independente na rodada 1: 9,24/10, nenhum achado alto/crítico aberto** ([evidências](docs/execution/2026-10-08-p8-evidencias.md)). Cobriu 16 casos lógicos × 3 transportes × 2 backends reais Qwen/Chroma, avaliador estrito, carga/segurança e o delta de admission autorizado pelo usuário (pendência documental conhecida → controle 200 sem prova). **Ressalvas:** a regressão offline integral oficial não está verde por um `WinError 5` intermitente no rename do build em código **aceito P4 intocado** (1 achado MÉDIO aberto, a reavaliar em Linux/D04/P9); janela fixa de 8 s no harness de carga (BAIXO-MÉDIO aberto). Nenhum G4 operacional/D04/corpus real/G3 pleno/SLO/Linux/AWS liberado. **Roadmap de entrega do produto final em três blocos** (1: fechar achados de P8 · 2: ambiente EC2/AWS Linux e D04 · 3: dependências humanas G5/G8/corpus/gabarito) no [HANDOFF](docs/HANDOFF.md).
+
+> **Histórico de P6 em 07/10/2026:** [P6 técnico sintético](docs/execution/2026-10-07-p6-evidencias.md) aprovado 9,35/10 na rodada 2 final; parecer formal SHA-256 `2edda68b5ca17c286878b5ba622bdf7ffa844cf72c82060123bb547a4598a60c`. 18 identidades congeladas, 1.283 testes integrados.
 
 > **Histórico de P5 em 07/10/2026:** [P5 técnico sintético](docs/execution/2026-10-07-p5-evidencias.md) aprovado 9,33/10 na rodada 1; parecer SHA-256 `ef260d849a286fe32dd3784addb93c19582106b1df924a033eade04af8f9d893`. 5 identidades congeladas, 1.090 testes integrados.
 
@@ -15,7 +17,7 @@
 > **Referência canônica de escopo e políticas do produto.**
 > Este documento conserva a natureza jurídica e a arquitetura-alvo do RAG **Andrade Advogados**. Estado, mapa e prompt de retomada ficam no [HANDOFF](docs/HANDOFF.md); requisitos/gates completos no plano/specs v0.6 congelados; evidências e decisões nos registros/pareceres. Leia as instruções AGENTS.md/RTK.md aplicáveis explicitamente; esta documentação não instala hooks nem autoriza executar comandos históricos.
 
-> **Encerramento da sessão em 07/10/2026:** P6 técnico aceito (9,35/10, R2), P7 ainda não iniciado. Próxima sessão: API HTTP/FastAPI, cache governado, streaming e concorrência conforme escopo/critérios do HANDOFF. Nenhum código, teste, corpus ou parecer anterior foi alterado neste fechamento documental.
+> **Encerramento da sessão em 08/10/2026 (histórico):** P7 técnico sintético aceito (9,37/10, R2). Próxima sessão prevista: P8 — Homologação ponta a ponta (preparação técnica sintética) conforme escopo/critérios do HANDOFF. Nenhum código, teste, corpus ou parecer anterior foi alterado neste fechamento documental. **Estado subsequente:** P8 iniciado e em andamento nesta sessão, conforme [evidências](docs/execution/2026-10-08-p8-evidencias.md); ainda sem aceite técnico próprio.
 
 ---
 
@@ -184,7 +186,7 @@ Implementação P3B aceita: CitationUnit conserva a unidade canônica completa e
 ## 4. Arquitetura do Agente e Orquestração (LangGraph)
 
 ### 4.1. Grafo de Estado Determinístico (`StateGraph`)
-O diagrama abaixo é **arquitetura-alvo P6/P7**, não o fluxo implementado atual. app/agent.py contém grafo legado de chamadas a modelos, sem recuperação/prova governadas P5/P6, e app/main.py está vazio. A integração ainda deverá introduzir planejamento, recuperação, fechamento/contexto, validação e renderização backend; não habilitar consulta real com base neste desenho:
+O diagrama abaixo conserva a **arquitetura-alvo histórica P6/P7**, não o fluxo implementado atual. Na revisão inicial o projeto tinha app/agent.py com grafo legado de chamadas a modelos e a entrada HTTP app/main.py vazia; desde o aceite técnico sintético P6/P7 existem grafo governado de grounding/renderização e factory FastAPI explícita com recuperação/prova governadas. O desenho não representa integralmente esse fluxo atual e não autoriza consulta real; a geração remota permanece bloqueada:
 
 ```mermaid
 graph TD
@@ -223,8 +225,8 @@ A navegação detalhada e as fronteiras correntes estão no [mapa do HANDOFF](do
 | Prova/ledger/fechamento | P3B técnico aceito | app/ingestion/evidence.py, provenance.py, references.py, review_store.py, closure.py, chunker.py |
 | Embedding/lexical/gerações | P3A/lexical/P4 técnicos aceitos; operação pendente | app/embeddings/, app/retrieval/lexical.py e módulos P4 listados no HANDOFF |
 | Recuperação | P5 técnico sintético aceito (9,33/10, R1) | app/retrieval/hybrid.py, indexer.py, app/evaluation/retrieval.py |
-| Grafo/cache | Helpers existentes, não integrados à prova/autoridade como P6/P7 | app/agent.py; app/cache.py usa chave por pergunta/TTL legado |
-| API | app/main.py e tests/test_api.py vazios; P7 pendente | Contratos HTTP existem nos modelos; nenhuma rota RAG operacional |
+| Grafo/geração governada | P6 técnico aceito (9,35/10, R2); LangGraph P6 com grounding estrito | app/answer_contracts.py, terms.py, prompts.py, generators.py, grounding.py, rendering.py, generation.py |
+| API/cache governado | P7 técnico aceito (9,37/10, R2); factory FastAPI explícita, GovernedAnswerRuntime, GovernedResponseCache, streaming SSE, pontes guardadas e rotas /chat, /v1/answer, /v1/answer/stream, /health, /ready, /metrics, /admin/policy | app/main.py, http_contracts.py, answer_runtime.py, cache.py; tests/test_api.py, test_p7_*.py | Aceite P7 restrito às 12 identidades históricas; o delta de admission em app/answer_runtime.py pertence ao P8 e ainda não tem aceite próprio |
 
 ---
 

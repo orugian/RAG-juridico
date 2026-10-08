@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Andrade Advogados — Console de Testes Empíricos RAG (P7 Aprovado)</title>
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-secondary: #111827;
+      --bg-card: #182234;
+      --bg-card-hover: #1f2b42;
+      --bg-accent: #0f172a;
+      --border-color: #24334a;
+      --border-subtle: #1e293b;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-gold: #d4af37;
+      --accent-gold-hover: #b8972c;
+      --accent-blue: #38bdf8;
+      --accent-blue-dim: #0284c7;
+      --status-answered: #10b981;
+      --status-abstained: #f59e0b;
+      --status-clarification: #8b5cf6;
+      --status-error: #ef4444;
+      --code-bg: #030712;
+      --radius: 8px;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      line-height: 1.5;
+      padding: 24px 32px;
+      font-size: 14px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 24px;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-badge {
+      background: rgba(212, 175, 55, 0.12);
+      border: 1px solid rgba(212, 175, 55, 0.4);
+      color: var(--accent-gold);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .brand-sub {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .gates-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+    }
+
+    .pill-green {
+      color: #34d399;
+      font-weight: 600;
+    }
+
+    .pill-pending {
+      color: var(--text-dim);
+    }
+
+    /* Layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1080px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Sidebar controls */
+    .panel {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"], select, textarea {
+      width: 100%;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent-blue);
+    }
+
+    .scenarios-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .scenario-btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 10px 12px;
+      border-radius: 6px;
+      text-align: left;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .scenario-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent-blue-dim);
+    }
+
+    .scenario-btn.active {
+      background: rgba(56, 189, 248, 0.08);
+      border-color: var(--accent-blue);
+    }
+
+    .scenario-tag {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .tag-answered { color: var(--status-answered); }
+    .tag-abstained { color: var(--status-abstained); }
+    .tag-clarify { color: var(--status-clarification); }
+    .tag-error { color: var(--status-error); }
+
+    /* Action buttons */
+    .btn-primary {
+      background: var(--accent-blue-dim);
+      border: 1px solid var(--accent-blue);
+      color: #fff;
+      font-weight: 600;
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+      font-size: 13px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s;
+    }
+
+    .btn-primary:hover {
+      background: #026bb0;
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      color: var(--text-main);
+      border-color: var(--text-muted);
+    }
+
+    /* Main Display Area */
+    .main-view {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .result-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 20px;
+      position: relative;
+    }
+
+    .status-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .status-badge-lg {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-answered {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: var(--status-answered);
+    }
+
+    .badge-abstained {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: var(--status-abstained);
+    }
+
+    .badge-needs_clarification {
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      color: var(--status-clarification);
+    }
+
+    .badge-error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: var(--status-error);
+    }
+
+    .response-text-box {
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-main);
+      background: var(--bg-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 20px;
+      white-space: pre-wrap;
+    }
+
+    /* 4 Elements Rule Box */
+    .elements-section {
+      margin-top: 20px;
+    }
+
+    .elements-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent-gold);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .citations-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .citation-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-left: 3px solid var(--accent-gold);
+      border-radius: 6px;
+      padding: 14px;
+    }
+
+    .citation-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+
+    .citation-meta-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .citation-meta-label {
+      color: var(--text-dim);
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .citation-meta-val {
+      color: var(--text-main);
+      font-weight: 500;
+    }
+
+    .parties-tag {
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      color: var(--accent-blue);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      display: inline-block;
+      margin-top: 2px;
+    }
+
+    .parties-third-tag {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      display: inline-block;
+      margin-top: 2px;
+    }
+
+    .quote-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #e2e8f0;
+      position: relative;
+    }
+
+    .quote-badge {
+      font-size: 9px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    /* Audit & Metrics Panel */
+    .audit-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .audit-cell {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      padding: 8px 12px;
+    }
+
+    .audit-cell-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    .audit-cell-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      margin-top: 2px;
+    }
+
+    /* Tabs */
+    .tabs-bar {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+      margin-top: 16px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .tab-btn.active {
+      background: var(--bg-card);
+      color: var(--accent-blue);
+    }
+
+    .tab-content {
+      display: none;
+      margin-top: 12px;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    pre code {
+      display: block;
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #94a3b8;
+      overflow-x: auto;
+      max-height: 380px;
+    }
+
+    /* Architecture flow strip */
+    .arch-strip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 12px 0;
+      margin-bottom: 8px;
+    }
+
+    .arch-step {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 11px;
+      white-space: nowrap;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .arch-step-num {
+      color: var(--accent-gold);
+      font-weight: 700;
+      font-size: 9px;
+      text-transform: uppercase;
+    }
+
+    .arch-step-name {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .arch-arrow {
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
+    .footer-note {
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+      font-size: 11px;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <div class="brand-title">
+        <span>Andrade Advogados</span>
+        <span class="brand-badge">P7 Aprovado · 9,37/10</span>
+      </div>
+      <div class="brand-sub">Console de Testes Empíricos & Validação Arquitetural do Backend RAG Jurídico</div>
+    </div>
+    <div class="gates-pill">
+      <span class="pill-green">● P0 a P7 Aprovados</span>
+      <span style="color:var(--border-color);">|</span>
+      <span class="pill-pending">P8 (Homologação) & P9 (AWS) Pendentes</span>
+    </div>
+  </header>
+
+  <!-- Architecture Flow Banner -->
+  <div class="panel" style="padding: 12px 16px; margin-bottom: 24px;">
+    <div class="panel-title" style="margin-bottom: 8px;">
+      <span>Pipeline Técnico de Produção Governado (P0 → P7)</span>
+      <span style="color: var(--accent-blue); font-size: 11px;">1.556 Testes Offline Integrados · Zero Falhas</span>
+    </div>
+    <div class="arch-strip">
+      <div class="arch-step">
+        <span class="arch-step-num">P7 ASGI</span>
+        <span class="arch-step-name">Perimeter & RateTable</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P1 Auth</span>
+        <span class="arch-step-name">X-API-Key & AccessContext</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P7 Cache</span>
+        <span class="arch-step-name">GovernedCache (HMAC)</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P4 Pin</span>
+        <span class="arch-step-name">GenerationManager.pin()</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P5 Retrieval</span>
+        <span class="arch-step-name">BM25 + Chroma (Qwen)</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P3B Closure</span>
+        <span class="arch-step-name">resolve_closure & Ledger</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P6 LangGraph</span>
+        <span class="arch-step-name">Grounding & 4 Elementos</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">P7 Guard</span>
+        <span class="arch-step-name">Commit & Reauth em Voo</span>
+      </div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-step">
+        <span class="arch-step-num">Emissão</span>
+        <span class="arch-step-name">JSON Integral / SSE buffer</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
+
+    <!-- Left Column: Controls & Presets -->
+    <aside>
+      <div class="panel">
+        <div class="panel-title">
+          <span>Configuração de Chamada</span>
+          <span id="conn-indicator" style="color: #34d399; font-size: 11px;">Simulador Ativo</span>
+        </div>
+
+        <div class="form-group">
+          <label>Modo de Teste</label>
+          <select id="mode-select" onchange="toggleMode()">
+            <option value="simulation" selected>Bancada Determinística (Fixtures P7)</option>
+            <option value="live">Conexão API Local (http://127.0.0.1:8000)</option>
+          </select>
+        </div>
+
+        <div id="live-config-group" style="display: none;">
+          <div class="form-group">
+            <label>API Base URL</label>
+            <input type="text" id="api-base" value="http://127.0.0.1:8000">
+          </div>
+          <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; padding: 8px 10px; font-size: 11px; margin-bottom: 12px; color: #94a3b8;">
+            <strong style="color: var(--accent-blue);">Como iniciar o servidor:</strong><br>
+            Execute no terminal:<br>
+            <code style="color: #f1f5f9; display:block; margin: 4px 0;">.venv\Scripts\python.exe docs/dev_server.py</code>
+            Depois, acesse <a href="http://127.0.0.1:8000/" target="_blank" style="color: var(--accent-blue);">http://127.0.0.1:8000/</a> no navegador para evitar bloqueios de CORS.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Credencial X-API-Key</label>
+          <select id="auth-preset" onchange="updateCustomKey()">
+            <option value="query">Colaborador Interno (Consulta: q*40)</option>
+            <option value="operator">Operador do Sistema (o*40)</option>
+            <option value="invalid">Credencial Inválida (Erro 401)</option>
+            <option value="revoked">Credencial Revogada no Journal (Erro 403)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Rota de Destino</label>
+          <select id="endpoint-select">
+            <option value="/v1/answer">POST /v1/answer (JSON)</option>
+            <option value="/v1/answer/stream">POST /v1/answer/stream (SSE bufferizado)</option>
+            <option value="/chat">POST /chat (Alias não-streaming)</option>
+            <option value="/ready">GET /ready (Readiness de autoridades)</option>
+            <option value="/metrics">GET /metrics (Métricas & Pools)</option>
+            <option value="/admin/policy">GET /admin/policy (Estado de Política)</option>
+            <option value="/health">GET /health (Liveness público)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Pergunta ou Comando</label>
+          <textarea id="question-input" rows="3">Qual o valor pactuado de honorários pro labore e percentual de êxito da Alpha Participações?</textarea>
+        </div>
+
+        <button class="btn-primary" onclick="executeCall()">
+          <span>Executar Consulta Governada</span>
+        </button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">
+          <span>Cenários de Teste Canônicos</span>
+        </div>
+        <div class="scenarios-list">
+          <button class="scenario-btn active" onclick="loadScenario(1)">
+            <span class="scenario-tag tag-answered">Cenário 1 · Honorários (4 Elementos)</span>
+            <span style="font-weight: 500;">Contrato da Banca nº 104/2023 (Alpha Part.)</span>
+          </button>
+
+          <button class="scenario-btn" onclick="loadScenario(2)">
+            <span class="scenario-tag tag-answered">Cenário 2 · Contrato de Terceiros</span>
+            <span style="font-weight: 500;">Locação nº 201/2022 (Íris Imóveis vs Lótus)</span>
+          </button>
+
+          <button class="scenario-btn" onclick="loadScenario(3)">
+            <span class="scenario-tag tag-answered">Cenário 3 · Base + Aditivo + Distrato</span>
+            <span style="font-weight: 500;">Rescisão e encerramento (doc:301 e doc:302)</span>
+          </button>
+
+          <button class="scenario-btn" onclick="loadScenario(4)">
+            <span class="scenario-tag tag-clarify">Cenário 4 · Ambiguidade Instrumental</span>
+            <span style="font-weight: 500;">needs_clarification sem escolha arbitrária</span>
+          </button>
+
+          <button class="scenario-btn" onclick="loadScenario(5)">
+            <span class="scenario-tag tag-abstained">Cenário 5 · Abstenção Categórica</span>
+            <span style="font-weight: 500;">Informação não constante no acervo</span>
+          </button>
+
+          <button class="scenario-btn" onclick="loadScenario(6)">
+            <span class="scenario-tag tag-error">Cenário 6 · Revogação em Voo (P7-J1)</span>
+            <span style="font-weight: 500;">Simulação 403 Forbidden no commit ASGI</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Column: Results & Verification -->
+    <main class="main-view">
+
+      <div class="result-card">
+        <div class="status-header">
+          <div>
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 700;">Status do Pipeline</span>
+            <div id="status-badge-container" style="margin-top: 4px;">
+              <span class="status-badge-lg badge-answered" id="status-badge">
+                <span id="status-dot">●</span>
+                <span id="status-text">answered</span>
+              </span>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <span style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 700;">Latência & Origem</span>
+            <div style="margin-top: 4px; font-family: ui-monospace, monospace; font-size: 13px; font-weight: 600;">
+              <span id="latency-text">14.2 ms</span> · <span id="cached-text" style="color: var(--accent-blue);">Cache Miss (Primeira Execução)</span>
+            </div>
+          </div>
+        </div>
+
+        <label style="margin-bottom: 8px;">Texto Extraído Fundamentado (Resposta)</label>
+        <div class="response-text-box" id="response-text">Carregando resposta...</div>
+
+        <!-- 4 Elements Rule Box -->
+        <div class="elements-section" id="elements-section">
+          <div class="elements-title">
+            <span>Regra Mandatória dos 4 Elementos de Citação (Fidelidade Documental)</span>
+          </div>
+
+          <div class="citations-grid" id="citations-container">
+            <!-- Citations inserted dynamically -->
+          </div>
+        </div>
+
+        <!-- Audit & Tracking -->
+        <div class="elements-title" style="margin-top: 24px; color: var(--text-muted);">
+          <span>Auditoria, Correlação & Metadados Governados</span>
+        </div>
+        <div class="audit-grid">
+          <div class="audit-cell">
+            <div class="audit-cell-label">Request ID</div>
+            <div class="audit-cell-value" id="audit-req-id" style="font-size: 11px;">req-7f89b41a</div>
+          </div>
+          <div class="audit-cell">
+            <div class="audit-cell-label">Geração de Corpus</div>
+            <div class="audit-cell-value" id="audit-gen-id" style="font-size: 11px;">gen-p6-01</div>
+          </div>
+          <div class="audit-cell">
+            <div class="audit-cell-label">Thread ID</div>
+            <div class="audit-cell-value" id="audit-thread-id" style="font-size: 11px;">thread-corr-01</div>
+          </div>
+          <div class="audit-cell">
+            <div class="audit-cell-label">Modelo Utilizado</div>
+            <div class="audit-cell-value" id="audit-model" style="font-size: 11px;">local:scripted</div>
+          </div>
+          <div class="audit-cell">
+            <div class="audit-cell-label">Reason Code</div>
+            <div class="audit-cell-value" id="audit-reason" style="font-size: 11px;">—</div>
+          </div>
+        </div>
+
+        <!-- Tabs: Raw JSON & Live Log -->
+        <div class="tabs-bar">
+          <button class="tab-btn active" onclick="switchTab('raw-json')">Payload HTTP Bruto (JSON)</button>
+          <button class="tab-btn" onclick="switchTab('sse-stream')">Transporte ASGI / SSE Event</button>
+          <button class="tab-btn" onclick="switchTab('metrics-view')">Métricas do Servidor (/metrics)</button>
+        </div>
+
+        <div class="tab-content active" id="tab-raw-json">
+          <pre><code id="code-json">{ /* JSON formatado */ }</code></pre>
+        </div>
+
+        <div class="tab-content" id="tab-sse-stream">
+          <pre><code id="code-sse">event: answer
+data: { ... }
+
+</code></pre>
+        </div>
+
+        <div class="tab-content" id="tab-metrics-view">
+          <pre><code id="code-metrics">{
+  "cache_hits": 14,
+  "cache_misses": 3,
+  "cache_entries": 3,
+  "cache_bytes": 14820,
+  "answered_count": 12,
+  "abstained_count": 3,
+  "needs_clarification_count": 2,
+  "latency_p50_ms": 12.4,
+  "latency_p95_ms": 18.9,
+  "latency_p99_ms": 24.1,
+  "total_requests": 17,
+  "total_errors": 0,
+  "query_active": 1,
+  "query_pending": 1,
+  "query_queued": 0,
+  "control_active": 0,
+  "control_pending": 0,
+  "control_queued": 0
+}</code></pre>
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <footer class="footer-note">
+    <span>Andrade Advogados · Sistema RAG Governativo · Etapa P7 Concluída em 08/10/2026</span>
+    <span>Soberania Local: Processamento em CPU local com Qwen3-Embedding-0.6B · Zero transmissão externa</span>
+  </footer>
+
+  <script>
+    // Scenarios database (Canonical synthetic fixtures validated in P0-P7 test suites)
+    const SCENARIOS = {
+      1: {
+        name: "Honorários Alpha",
+        endpoint: "/v1/answer",
+        auth: "query",
+        question: "Qual o valor pactuado de honorários pro labore e percentual de êxito da Alpha Participações?",
+        response: {
+          request_id: "req-p7-honorarios-001",
+          thread_id: "thread-honorarios-alpha",
+          model_used: "generator:scripted-p6",
+          status: "answered",
+          reason_code: null,
+          cached: false,
+          processing_time_ms: 14.8,
+          timestamp: new Date().toISOString(),
+          corpus_generation_id: "gen-p6-01",
+          response: "Nos termos do Contrato de Prestação de Serviços Jurídicos e Honorários Advocatícios nº 104/2023, firmado entre Andrade Advogados e Alpha Participações S.A., foram estipulados honorários de pró-labore no valor fixo de R$ 50.000,00 (cinquenta mil reais), com vencimento em parcela única. Adicionalmente, pactuou-se honorários de êxito (quota litis) na razão de 20% sobre o proveito econômico obtido na demanda judicial.",
+          citations: [
+            {
+              citation_id: "cite-doc101-cl1",
+              contract_id: "doc:101",
+              contract_title: "Contrato de Honorários Advocatícios nº 104/2023",
+              document_version: 1,
+              parties: [
+                { name: "Andrade Advogados", role: "Contratada" },
+                { name: "Alpha Participações S.A.", role: "Contratante" }
+              ],
+              location: {
+                clause: "Cláusula 4ª",
+                paragraph: "Caput",
+                annex: null,
+                page: 2
+              },
+              quote: "Pelos serviços jurídicos ora contratados, a Contratante pagará à Contratada a quantia fixa de R$ 50.000,00 (cinquenta mil reais) a título de pró-labore.",
+              source_id: "src:doc101",
+              evidence_id: "ev:doc101-cl4-p1"
+            },
+            {
+              citation_id: "cite-doc101-cl2",
+              contract_id: "doc:101",
+              contract_title: "Contrato de Honorários Advocatícios nº 104/2023",
+              document_version: 1,
+              parties: [
+                { name: "Andrade Advogados", role: "Contratada" },
+                { name: "Alpha Participações S.A.", role: "Contratante" }
+              ],
+              location: {
+                clause: "Cláusula 4ª",
+                paragraph: "Parágrafo 2º",
+                annex: null,
+                page: 2
+              },
+              quote: "Em caso de êxito na demanda, será devida à Contratada verba honorária adicional correspondente a 20% (vinte por cento) sobre o benefício patrimonial efetivamente auferido.",
+              source_id: "src:doc101",
+              evidence_id: "ev:doc101-cl4-p2"
+            }
+          ]
+        }
+      },
+      2: {
+        name: "Contratos de Terceiros (Locação)",
+        endpoint: "/v1/answer",
+        auth: "query",
+        question: "Qual o valor do aluguel mensal e o prazo de vigência no contrato entre Íris Imóveis e Lótus Comércio?",
+        response: {
+          request_id: "req-p7-terceiros-002",
+          thread_id: "thread-locacao-terceiros",
+          model_used: "generator:scripted-p6",
+          status: "answered",
+          reason_code: null,
+          cached: true,
+          processing_time_ms: 2.1,
+          timestamp: new Date().toISOString(),
+          corpus_generation_id: "gen-p6-01",
+          response: "Conforme o Contrato de Locação Comercial nº 201/2022, celebrado entre Íris Empreendimentos Imobiliários Ltda. (Locadora) e Lótus Comércio de Alimentos Ltda. (Locatária) — instrumento de terceiros no qual a Andrade Advogados NÃO figura como parte —, o valor do aluguel mensal foi ajustado em R$ 18.500,00 (dezoito mil e quinhentos reais), com vigência de 36 (trinta e seis) meses contados da data de entrega das chaves.",
+          citations: [
+            {
+              citation_id: "cite-doc201-cl3",
+              contract_id: "doc:201",
+              contract_title: "Contrato de Locação Comercial nº 201/2022",
+              document_version: 1,
+              parties: [
+                { name: "Íris Empreendimentos Imobiliários Ltda.", role: "Locadora" },
+                { name: "Lótus Comércio de Alimentos Ltda.", role: "Locatária" }
+              ],
+              location: {
+                clause: "Cláusula 3ª",
+                paragraph: "Item 3.1",
+                annex: null,
+                page: 1
+              },
+              quote: "O valor do aluguel mensal é fixado em R$ 18.500,00 (dezoito mil e quinhentos reais), reajustável anualmente pelo IPCA/IBGE.",
+              source_id: "src:doc201",
+              evidence_id: "ev:doc201-cl3-p1"
+            }
+          ]
+        }
+      },
+      3: {
+        name: "Base + Aditivo + Distrato",
+        endpoint: "/v1/answer",
+        auth: "query",
+        question: "O contrato de consultoria doc:301 ainda está em vigor com a Beta Serviços?",
+        response: {
+          request_id: "req-p7-distrato-003",
+          thread_id: "thread-rescisao-beta",
+          model_used: "generator:scripted-p6",
+          status: "answered",
+          reason_code: null,
+          cached: false,
+          processing_time_ms: 19.4,
+          timestamp: new Date().toISOString(),
+          corpus_generation_id: "gen-p6-01",
+          response: "O Contrato de Prestação de Serviços Técnicos nº 301/2021 NÃO se encontra mais em vigor. Embora o Primeiro Aditivo nº 301-A houvesse prorrogado sua vigência, o Distrato e Termo de Quitação Recíproca nº 302/2023 extinguiu expressamente todas as obrigações contratuais a partir de 15/05/2023.",
+          citations: [
+            {
+              citation_id: "cite-doc302-distrato",
+              contract_id: "doc:302",
+              contract_title: "Distrato ao Contrato nº 301/2021",
+              document_version: 1,
+              parties: [
+                { name: "Andrade Advogados", role: "Contratada" },
+                { name: "Beta Serviços Empresariais Ltda.", role: "Contratante" }
+              ],
+              location: {
+                clause: "Cláusula 1ª",
+                paragraph: "Caput",
+                annex: null,
+                page: 1
+              },
+              quote: "As Partes resolvem, de comum acordo, rescindir integralmente o Contrato originário nº 301/2021 e seus aditivos, conferindo-se recíproca e irrevogável quitação.",
+              source_id: "src:doc302",
+              evidence_id: "ev:doc302-rescisao"
+            }
+          ]
+        }
+      },
+      4: {
+        name: "Ambiguidade Instrumental",
+        endpoint: "/v1/answer",
+        auth: "query",
+        question: "Quais os prazos previstos no Contrato de Prestação de Serviços da Gamma?",
+        response: {
+          request_id: "req-p7-clarify-004",
+          thread_id: "thread-gamma-ambig",
+          model_used: null,
+          status: "needs_clarification",
+          reason_code: "ambiguous_instrument",
+          cached: false,
+          processing_time_ms: 6.8,
+          timestamp: new Date().toISOString(),
+          corpus_generation_id: "gen-p6-01",
+          response: "Foram localizados múltiplos instrumentos de prestação de serviços envolvendo a empresa Gamma Participações no acervo: (1) Contrato nº 501/2021 (Assessoria Trabalhista) e (2) Contrato nº 508/2023 (Consultoria Tributária). Por favor, especifique a qual dos instrumentos a consulta se refere.",
+          citations: []
+        }
+      },
+      5: {
+        name: "Abstenção Categórica",
+        endpoint: "/v1/answer",
+        auth: "query",
+        question: "Existe cláusula autorizando subcontratação de serviços de perícia naval?",
+        response: {
+          request_id: "req-p7-abstained-005",
+          thread_id: "thread-abstencao-naval",
+          model_used: null,
+          status: "abstained",
+          reason_code: "insufficient_evidence",
+          cached: false,
+          processing_time_ms: 8.3,
+          timestamp: new Date().toISOString(),
+          corpus_generation_id: "gen-p6-01",
+          response: "Informação não localizada no acervo contratual disponível. O sistema abstém-se de responder por ausência de fundamento documental comprovado.",
+          citations: []
+        }
+      },
+      6: {
+        name: "Revogação em Voo (P7-J1)",
+        endpoint: "/v1/answer",
+        auth: "revoked",
+        question: "Consultar métricas ou respostas com chave revogada",
+        response: {
+          error: "forbidden",
+          code: "forbidden",
+          message: "Operação não autorizada. Credencial de acesso revogada pelo comitê de governança.",
+          request_id: "req-p7-revoked-006",
+          timestamp: new Date().toISOString()
+        }
+      }
+    };
+
+    let activeScenarioId = 1;
+
+    function toggleMode() {
+      const mode = document.getElementById("mode-select").value;
+      const liveGroup = document.getElementById("live-config-group");
+      const indicator = document.getElementById("conn-indicator");
+
+      if (mode === "live") {
+        liveGroup.style.display = "block";
+        indicator.textContent = "Modo Live API";
+        indicator.style.color = "#38bdf8";
+      } else {
+        liveGroup.style.display = "none";
+        indicator.textContent = "Simulador Ativo";
+        indicator.style.color = "#34d399";
+      }
+    }
+
+    function updateCustomKey() {
+      const preset = document.getElementById("auth-preset").value;
+      if (preset === "revoked") {
+        document.getElementById("endpoint-select").value = "/admin/policy";
+      }
+    }
+
+    function loadScenario(id) {
+      activeScenarioId = id;
+      const sc = SCENARIOS[id];
+      if (!sc) return;
+
+      // Update button active state
+      document.querySelectorAll(".scenario-btn").forEach((btn, index) => {
+        btn.classList.toggle("active", index + 1 === id);
+      });
+
+      document.getElementById("endpoint-select").value = sc.endpoint;
+      document.getElementById("auth-preset").value = sc.auth;
+      document.getElementById("question-input").value = sc.question;
+
+      renderResponse(sc.response, sc.endpoint);
+    }
+
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+
+      const targetBtn = Array.from(document.querySelectorAll(".tab-btn")).find(b => b.getAttribute("onclick").includes(tabId));
+      if (targetBtn) targetBtn.classList.add("active");
+
+      const targetContent = document.getElementById("tab-" + tabId);
+      if (targetContent) targetContent.classList.add("active");
+    }
+
+    async function executeCall() {
+      const mode = document.getElementById("mode-select").value;
+      const endpoint = document.getElementById("endpoint-select").value;
+      const auth = document.getElementById("auth-preset").value;
+      const question = document.getElementById("question-input").value;
+
+      if (mode === "simulation") {
+        // Find if matches active scenario or fallback
+        if (SCENARIOS[activeScenarioId] && SCENARIOS[activeScenarioId].question === question) {
+          renderResponse(SCENARIOS[activeScenarioId].response, endpoint);
+        } else {
+          // Dynamic simulated response
+          const simulated = {
+            request_id: "req-p7-sim-" + Math.random().toString(16).substring(2, 8),
+            thread_id: "thread-custom",
+            model_used: "generator:scripted-p6",
+            status: "answered",
+            reason_code: null,
+            cached: false,
+            processing_time_ms: 12.5,
+            timestamp: new Date().toISOString(),
+            corpus_generation_id: "gen-p6-01",
+            response: `Resposta simulada para a consulta: "${question}". Todas as proposições materiais são apoiadas estritamente em citações textuais de instrumentos canônicos autorizados.`,
+            citations: [
+              {
+                citation_id: "cite-custom-01",
+                contract_id: "doc:101",
+                contract_title: "Contrato de Honorários nº 104/2023",
+                document_version: 1,
+                parties: [{ name: "Andrade Advogados", role: "Contratada" }, { name: "Cliente Exemplo S.A.", role: "Contratante" }],
+                location: { clause: "Cláusula 1ª", paragraph: "Caput", annex: null, page: 1 },
+                quote: "Trecho literal verificado correspondente à consulta formulada.",
+                source_id: "src:doc101",
+                evidence_id: "ev:doc101-01"
+              }
+            ]
+          };
+          renderResponse(simulated, endpoint);
+        }
+      } else {
+        // Live Fetch
+        const baseUrl = document.getElementById("api-base").value.trim().replace(/\/$/, "");
+        const url = baseUrl + endpoint;
+        let apiKey = "q".repeat(40);
+        if (auth === "operator") apiKey = "o".repeat(40);
+        if (auth === "invalid") apiKey = "invalid-key";
+        if (auth === "revoked") apiKey = "revoked-key-sample";
+
+        const headers = {
+          "X-API-Key": apiKey,
+          "Content-Type": "application/json"
+        };
+
+        const isGet = endpoint === "/health" || endpoint === "/ready" || endpoint === "/metrics" || endpoint === "/admin/policy";
+        const options = {
+          method: isGet ? "GET" : "POST",
+          headers: headers
+        };
+
+        if (!isGet) {
+          if (endpoint === "/chat") {
+            options.body = JSON.stringify({
+              message: question,
+              thread_id: "web-thread-" + Date.now()
+            });
+          } else {
+            // /v1/answer e /v1/answer/stream esperam AnswerRequest estrito (extra='forbid')
+            options.body = JSON.stringify({
+              question: question
+            });
+          }
+        }
+
+        document.getElementById("response-text").textContent = "Enviando requisição para " + url + "...";
+
+        try {
+          const res = await fetch(url, options);
+          const rawText = await res.text();
+          let json;
+          if (endpoint.includes("stream") && rawText.includes("data: ")) {
+            const dataLine = rawText.split("\n").find(line => line.startsWith("data: "));
+            if (dataLine) {
+              try { json = JSON.parse(dataLine.replace(/^data:\s*/, "")); } catch (e) { json = null; }
+            }
+          }
+          if (!json) {
+            try { json = JSON.parse(rawText); } catch (e) { json = { raw_stream: rawText }; }
+          }
+
+          renderResponse(json, endpoint, res.status);
+        } catch (err) {
+          renderResponse({
+            error: "connection_error",
+            code: "service_unavailable",
+            message: "Falha ao conectar na API local (" + url + ").\n\nMotivos frequentes e solução:\n1. A fábrica crua 'uvicorn app.main:create_app --factory' opera sem runtime injetado (retornando 503) e sem CORS (retornando 403 no preflight OPTIONS).\n2. Para testar com a API ASGI conectada e CORS liberado, execute no terminal:\n   .venv\\Scripts\\python.exe docs/dev_server.py\n   e abra http://127.0.0.1:8000/ no navegador.\n3. Ou selecione 'Bancada Determinística (Fixtures P7)' no topo esquerdo para testar todos os cenários sem precisar iniciar servidor.\n\nDetalhes técnicos: " + err.message
+          }, endpoint, 503);
+        }
+      }
+    }
+
+    function renderResponse(data, endpoint, statusCode = 200) {
+      const isError = data.code === "forbidden" || data.code === "unauthorized" || data.code === "service_unavailable" || data.error;
+      const status = isError ? "error" : (data.status || (statusCode === 200 ? "ok" : "error"));
+
+      // Status badge
+      const badgeContainer = document.getElementById("status-badge");
+      badgeContainer.className = "status-badge-lg badge-" + (isError ? "error" : status);
+      document.getElementById("status-text").textContent = isError ? (data.code || "error") : status;
+
+      // Latency & Cache
+      document.getElementById("latency-text").textContent = (data.processing_time_ms ? data.processing_time_ms.toFixed(1) : "0.0") + " ms";
+      const cachedEl = document.getElementById("cached-text");
+      if (data.cached === true) {
+        cachedEl.textContent = "Cache Hit (Assinado HMAC)";
+        cachedEl.style.color = "#10b981";
+      } else if (data.cached === false) {
+        cachedEl.textContent = "Cache Miss (Gerado e Verificado)";
+        cachedEl.style.color = "var(--accent-blue)";
+      } else {
+        cachedEl.textContent = isError ? "Bloqueado na Entrada" : "Direto do Servidor";
+        cachedEl.style.color = "var(--text-dim)";
+      }
+
+      // Response text
+      const respBox = document.getElementById("response-text");
+      if (isError) {
+        respBox.textContent = `[HTTP ${statusCode || 403}] ${data.message || data.error || "Operação não permitida."}`;
+        respBox.style.color = "#f87171";
+      } else if (data.response) {
+        respBox.textContent = data.response;
+        respBox.style.color = "var(--text-main)";
+      } else if (data.status === "ready" || data.status === "ok") {
+        respBox.textContent = `Serviço Operacional: status = "${data.status}". Todas as verificações de integridade foram atestadas.`;
+        respBox.style.color = "var(--text-main)";
+      } else {
+        respBox.textContent = JSON.stringify(data, null, 2);
+        respBox.style.color = "var(--text-main)";
+      }
+
+      // Citations / 4 Elements
+      const elemSection = document.getElementById("elements-section");
+      const citContainer = document.getElementById("citations-container");
+      citContainer.innerHTML = "";
+
+      if (data.citations && data.citations.length > 0) {
+        elemSection.style.display = "block";
+        data.citations.forEach(c => {
+          const card = document.createElement("div");
+          card.className = "citation-card";
+
+          const partiesHtml = (c.parties || []).map(p => {
+            const isThird = !p.name.includes("Andrade Advogados");
+            return `<span class="${isThird ? 'parties-third-tag' : 'parties-tag'}">${p.role}: ${p.name}</span>`;
+          }).join(" ");
+
+          const locText = `${c.location.clause || ''} ${c.location.paragraph ? '· ' + c.location.paragraph : ''} ${c.location.page ? '(Pág. ' + c.location.page + ')' : ''}`;
+
+          card.innerHTML = `
+            <div class="citation-meta-row">
+              <div class="citation-meta-item">
+                <span class="citation-meta-label">1. Instrumento</span>
+                <span class="citation-meta-val">${c.contract_title} [${c.contract_id}]</span>
+              </div>
+              <div class="citation-meta-item">
+                <span class="citation-meta-label">2. Partes Efetivas</span>
+                <div>${partiesHtml || 'Partes do instrumento'}</div>
+              </div>
+              <div class="citation-meta-item">
+                <span class="citation-meta-label">3. Localização</span>
+                <span class="citation-meta-val" style="color:var(--accent-blue);">${locText}</span>
+              </div>
+            </div>
+            <div class="quote-badge">4. Transcrição Literal Verbatim com Origem Verificada [${c.source_id}]</div>
+            <div class="quote-box">"${c.quote}"</div>
+          `;
+          citContainer.appendChild(card);
+        });
+      } else {
+        elemSection.style.display = "none";
+      }
+
+      // Audit cells
+      document.getElementById("audit-req-id").textContent = data.request_id || "req-none";
+      document.getElementById("audit-gen-id").textContent = data.corpus_generation_id || "gen-none";
+      document.getElementById("audit-thread-id").textContent = data.thread_id || "thread-none";
+      document.getElementById("audit-model").textContent = data.model_used || "nenhum";
+      document.getElementById("audit-reason").textContent = data.reason_code || (isError ? data.code : "—");
+
+      // Tabs update
+      document.getElementById("code-json").textContent = JSON.stringify(data, null, 2);
+
+      const sseText = endpoint.includes("stream")
+        ? `event: answer\ndata: ${JSON.stringify(data)}\n\n`
+        : `/* Endpoint não-streaming (${endpoint}) */\nHTTP/1.1 200 OK\nContent-Type: application/json\n\n${JSON.stringify(data, null, 2)}`;
+      document.getElementById("code-sse").textContent = sseText;
+    }
+
+    // Initialize first scenario
+    window.addEventListener("DOMContentLoaded", () => {
+      loadScenario(1);
+    });
+  </script>
+</body>
+</html>

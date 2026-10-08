@@ -4,7 +4,7 @@ Backend Python/FastAPI em desenvolvimento para consulta extrativa e auditável d
 
 ## Retomada do desenvolvimento
 
-A sessão foi encerrada após o aceite técnico sintético de P4. A próxima entrega é **P5 técnico em fixtures sintéticas**; isso não libera corpus real, API de produção ou avaliação jurídica. Estado, aceites, bloqueios, mapa de código e **prompt copiável de início da próxima sessão** estão no [HANDOFF](docs/HANDOFF.md).
+P6 técnico sintético foi aprovado (9,35/10, R2). **P7 — API HTTP/FastAPI, cache governado, streaming e concorrência foi aprovado no subgate técnico sintético (9,37/10, Rodada 2 final)**, sem liberação de corpus real nem API de produção. [Contrato HTTP e montagem explícita](docs/P7_API.md), [evidências P7](docs/execution/2026-10-07-p7-evidencias.md), [parecer P7](docs/reviews/2026-10-07-exec-p7.md). Próxima frente: **P8 — Homologação ponta a ponta (preparação técnica sintética)**. Estado, aceites, bloqueios, mapa de código e **prompt de retomada** estão no [HANDOFF](docs/HANDOFF.md).
 
 Leia explicitamente as instruções AGENTS.md/RTK.md aplicáveis e, depois:
 
