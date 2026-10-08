@@ -23,10 +23,12 @@ from app.telemetry import safe_trace
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.config import get_settings
+from app.config import Settings
 from app.contracts import AccessContext
 
-settings = get_settings()
+# Legacy helpers use process environment, never implicit .env on import.
+# P7 supplies explicit application configuration for HTTP authentication.
+settings = Settings(_env_file=None)
 
 # =====================================================================
 # Rate Limiting (slowapi)

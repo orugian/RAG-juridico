@@ -5,6 +5,7 @@ this projection reaches the exporter; unknown fields, attachments and events are
 dropped before the SDK receives them. The pipeline's original values are untouched.
 """
 from contextvars import ContextVar
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 import math
@@ -24,6 +25,23 @@ FIXED_NODES = frozenset({"chain", "llm", "process", "fallback", "error", "retrie
 FIXED_TAGS = frozenset({"privacy_redacted", "internal", "llm_generation"})
 _parent = ContextVar("safe_telemetry_parent", default=None)
 _client = ContextVar("safe_telemetry_client", default=None)
+_configuration = ContextVar("safe_telemetry_configuration", default=None)
+
+
+@contextmanager
+def telemetry_configuration(settings):
+    """Explicit per-request configuration; no global settings or inherited exporter.
+
+    Legacy callers outside this scope retain their existing configuration behavior.
+    Context variables follow P6's copy_context boundaries and unwind on every exit.
+    """
+    configuration_token = _configuration.set(settings)
+    client_token = _client.set(None)
+    try:
+        yield
+    finally:
+        _client.reset(client_token)
+        _configuration.reset(configuration_token)
 
 
 def error_category(error):
@@ -116,7 +134,9 @@ def safe_trace(*, name, run_type="chain"):
         @wraps(function)
         def wrapped(*args, **kwargs):
             assert_callback_boundary()
-            settings = get_settings()
+            settings = _configuration.get()
+            if settings is None:
+                settings = get_settings()
             client = _client.get()
             created = False
             if client is None and settings.langsmith_tracing_v2 and settings.langsmith_api_key.get_secret_value():
