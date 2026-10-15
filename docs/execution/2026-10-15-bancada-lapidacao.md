@@ -1,6 +1,6 @@
 # Pós-MVP — bancada de lapidação, LibreOffice, latência e publicação (15/10/2026)
 
-Decisões do usuário (15/10): manter VPS e usuário `claw`; Ubuntu será atualizado em breve; uma única chave; desativar e remover o claude-mem; fechar o Funnel; tratar os DOC/RTF com LibreOffice; reservar os documentos sem partes; reduzir latência (4 threads) se não houver prejuízo; interface simples para lapidação; revisão de partes/referências feita pelo próprio usuário sob demanda. Este registro **não** é parecer de juiz.
+Decisões do usuário (15/10): manter VPS e usuário `claw`; Ubuntu será atualizado em breve; uma única chave; desativar e remover o claude-mem; fechar o Funnel; tratar os DOC/RTF com LibreOffice; reservar os documentos sem partes; reduzir latência (4 threads) se não houver prejuízo; interface simples para lapidação; revisão de partes/referências feita pelo próprio usuário sob demanda. Juiz independente: **APROVADO 9,39/10, rodada 1** ([parecer](../reviews/2026-10-15-bancada-lapidacao.md)).
 
 ## Feito
 
@@ -63,4 +63,4 @@ Alternativa por túnel SSH (se o navegador bloquear algo): `ssh -N -L 8790:100.1
 
 ## Pendências
 
-Ver `LIMITACOES.md`. Principais: autorizar a reescrita do histórico do GitHub; revisão humana de partes, referências e relações; 20 PDFs digitalizados (OCR); segurança do host; D04/Supabase; atualização do Ubuntu e requalificação; juiz independente desta etapa após a troca para a nova geração.
+Ver `LIMITACOES.md`. Principais: autorizar a reescrita do histórico do GitHub; revisão humana de partes, referências e relações; 20 PDFs digitalizados (OCR); segurança do host; D04/Supabase; atualização do Ubuntu e requalificação.
