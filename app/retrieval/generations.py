@@ -7,11 +7,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
 import re
 import struct
+import sys
 import tempfile
 import time
 from uuid import uuid4
@@ -51,6 +53,60 @@ def _write(path, data):
 def _fault(callback, point):
     if callback is not None:
         callback(point)
+
+
+_FINALIZATION_TIMEOUT_SECONDS = 2.0
+_FINALIZATION_PAUSE_SECONDS = 0.05
+_FINALIZATION_WINDOWS_ERRORS = frozenset({5, 32, 33})
+_LOG = logging.getLogger(__name__)
+
+
+def _finalize_generation(stage, destination):
+    """Atomic rename under the caller's writer and ledger -> policy guards.
+
+    Windows may deny an ancestor rename while a descendant handle is live,
+    even after this adapter's own clients close. Allow only native access/share/
+    lock errors a short, monotonic two-second opportunity to clear. This is a
+    bounded mitigation, NOT identification of the historical handle owner.
+    Keep both authorities held: there is no snapshot reentry or unchecked swap.
+    Success/exhaustion events contain only category/counters, never paths.
+    Exhaustion preserves READY/reservation and requires explicit recovery;
+    rebuilding the reserved ID or overwriting a destination is forbidden.
+
+    The budget governs ADDITIONAL attempts only: the first rename always runs,
+    even with a zero budget. Before every retry, the monotonic clock is checked
+    after both path guards, because re-entry validation may itself consume time
+    (R1-B1-J1). This prevents starting a new attempt after the observed deadline
+    elapsed; it does NOT promise hard-real-time cancellation of an in-flight
+    filesystem syscall, logging or scheduler preemption.
+    """
+    deadline = time.monotonic() + _FINALIZATION_TIMEOUT_SECONDS
+    attempts, last_winerror, last_error = 0, None, None
+    while True:
+        _safe_path(stage)
+        if _safe_path(destination).exists():
+            raise ValueError("generation_id_immutable")
+        if last_error is not None and time.monotonic() >= deadline:
+            _LOG.warning("generation_finalization_unavailable attempts=%d winerror=%d", attempts, last_winerror)
+            raise ValueError("generation_finalization_unavailable") from last_error
+        attempts += 1
+        try:
+            os.rename(stage, destination)
+        except OSError as error:
+            if sys.platform != "win32" or getattr(error, "winerror", None) not in _FINALIZATION_WINDOWS_ERRORS:
+                raise
+            last_winerror, last_error = error.winerror, error
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(_FINALIZATION_PAUSE_SECONDS, remaining))
+                if time.monotonic() < deadline:
+                    continue
+            _LOG.warning("generation_finalization_unavailable attempts=%d winerror=%d", attempts, last_winerror)
+            raise ValueError("generation_finalization_unavailable") from error
+        else:
+            if attempts > 1:
+                _LOG.info("generation_finalization_recovered attempts=%d winerror=%d", attempts, last_winerror)
+            return
 
 
 def float32_vector(vector, dimension):
@@ -271,7 +327,7 @@ class GenerationManager:
             with self._commit_guard(bundle, ledger_digest=ledger_digest, policy=policy):
                 _write(stage / "READY", canonical_bytes({"schema_version": "ready-v1", "manifest_sha256": content_digest(manifest)}))
                 _fault(fault, "after_ready")
-                os.rename(stage, destination)
+                _finalize_generation(stage, destination)
                 _sync_directory(self.root)
             return manifest
 
@@ -381,7 +437,7 @@ class GenerationManager:
             self._reviews(loaded.artifacts.bundle, source_ids=allowed)
             _fault(fault, "before_recovery")
             with self._commit_guard(loaded.artifacts.bundle, ledger_digest=ledger_digest, access=access):
-                os.rename(stage, destination)
+                _finalize_generation(stage, destination)
                 _sync_directory(self.root)
             return manifest
 

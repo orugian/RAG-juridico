@@ -15,3 +15,7 @@ wheels/
 # Data / RAG artifacts
 data/
 m-files/acesso.md
+m-files/*.postman_collection.json
+LIMITACOES.md
+pytest-of-*/
+AGENT.md

@@ -34,20 +34,47 @@ def qwen(request):
 
 
 @pytest.fixture(scope="module", params=["embedded", "server"])
-def physical(request, tmp_path_factory, qwen):
+def physical_factory(request, tmp_path_factory, qwen):
+    """Cache only a successful build; never memoize a consumer's setup error.
+
+    Each failed attempt retains its own root. The next consumer may build in a
+    new root, but no failed observation is retried, skipped or recorded as passed.
+    A successful environment/server is reused and closed once at module teardown.
+    """
     mode = request.param
-    root = tmp_path_factory.mktemp("p8-" + mode)
-    server = LocalServer(root) if mode == "server" else None
+    cached = None
+
+    def acquire():
+        nonlocal cached
+        if cached is not None:
+            return cached
+        root = tmp_path_factory.mktemp("p8-" + mode)
+        server = LocalServer(root) if mode == "server" else None
+        try:
+            if server:
+                server.start()
+            encoder, budget = qwen
+            store = ChromaVectorStore(mode=mode, dimension=1024,
+                                      **({"host": "127.0.0.1", "port": server.port} if server else {}))
+            environment = build_p8_environment(root / "env", encoder=encoder, budget=budget, vector_store=store)
+        except BaseException:
+            if server:
+                server.stop()
+            raise
+        cached = (environment, server)
+        return cached
+
     try:
-        if server:
-            server.start()
-        encoder, budget = qwen
-        store = ChromaVectorStore(mode=mode, dimension=1024,
-                                  **({"host": "127.0.0.1", "port": server.port} if server else {}))
-        yield build_p8_environment(root / "env", encoder=encoder, budget=budget, vector_store=store), server
+        yield acquire
     finally:
-        if server:
-            server.stop()
+        if cached is not None and cached[1] is not None:
+            cached[1].stop()
+
+
+@pytest.fixture
+def physical(physical_factory):
+    # The potentially failing build belongs to this function-scoped consumer.
+    return physical_factory()
 
 
 def test_family_preserves_base_two_addenda_and_termination(physical):

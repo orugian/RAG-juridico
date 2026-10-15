@@ -6,6 +6,8 @@ No sleeps, polling, corpus downloads, operational services or private pool probe
 """
 import asyncio
 import json
+import math
+from time import perf_counter
 from pathlib import Path
 import threading
 
@@ -330,8 +332,9 @@ class PromptCountStall:
     provider threads have their own retention semantics; this test does not
     conflate that separate semaphore with the HTTP query pool.
     """
-    def __init__(self, budget):
+    def __init__(self, budget, *, wait_seconds=40):
         self.budget = budget
+        self.wait_seconds = wait_seconds
         self.entered, self.release = threading.Event(), threading.Event()
         self.lock = threading.Lock()
         self.once = True
@@ -344,7 +347,7 @@ class PromptCountStall:
         if block:
             self.observed_tokens = count
             self.entered.set()
-            assert self.release.wait(40), "synthetic prompt-count stall was not released"
+            assert self.release.wait(self.wait_seconds), "synthetic prompt-count stall was not released"
         return count
 
 
@@ -361,15 +364,73 @@ class CompletionObservedRuntime(GovernedAnswerRuntime):
             self.execution_finished.set()
 
 
+def _relative_deadline(healthy_miss_seconds):
+    """Reserve one observed maximum as margin; calibration is not an SLO.
+
+    HttpConfig enforces the existing finite 30s cap. Never clamp the result:
+    an overloaded host must fail calibration rather than lose measured margin.
+    """
+    if len(healthy_miss_seconds) not in (2, 3) or any(
+        type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds <= 0
+        for seconds in healthy_miss_seconds
+    ):
+        raise ValueError("local_deadline_calibration_requires_2_or_3_healthy_misses")
+    deadline = 2 * max(healthy_miss_seconds)
+    return HttpConfig(deadline_seconds=deadline).deadline_seconds
+
+
+async def _healthy_miss_baseline(env, mode):
+    """Three real HTTP recovery misses, isolated by fresh public runtime/cache.
+
+    Same request, proof, Qwen, Chroma, selector capacity and P6 attempts as the
+    recovery below. Only the injected stall is absent. The existing default
+    HTTP/P6 30s limits remain in force, so an unhealthy sample is never accepted.
+    """
+    samples = []
+    for index in range(3):
+        generator = GatedSelector(env)
+        runtime = GovernedAnswerRuntime(env.manager, generator, cache=GovernedResponseCache(),
+                                        token_counter=env.budget.count, max_generator_calls=1,
+                                        config=AnswerConfig(max_primary_attempts=1))
+        app = create_app(runtime=runtime, settings=configuration(),
+                         http_config=HttpConfig(workers=1, max_queue=0,
+                                                rate_requests=100, perimeter_requests=200))
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://p8-local") as client:
+                initial = await gauges(client)
+                assert initial["cache_entries"] == initial["cache_hits"] == initial["cache_misses"] == 0
+                request_body = body(RECOVERY)
+                started = perf_counter()
+                response = await client.post("/v1/answer", headers=HEADERS, json=request_body)
+                seconds = perf_counter() - started
+                assert_answer(response, RECOVERY, cached=False)
+                final = await gauges(client)
+                assert final["query_pending"] == final["query_active"] == final["query_queued"] == 0
+                assert final["cache_hits"] == 0 and final["cache_misses"] == final["cache_entries"] == 1
+                assert generator.calls == [RECOVERY] and generator.max_active == 1
+                samples.append(seconds)
+                print(json.dumps({"scenario": "local_healthy_miss_calibration_not_SLO", "mode": mode,
+                                  "sample": index + 1, "elapsed_seconds": seconds,
+                                  "cache_misses": 1, "cache_hits": 0}, sort_keys=True))
+    return tuple(samples)
+
+
 def test_deadline_keeps_stalled_query_worker_until_release_then_recovers(physical):
     env, mode = physical
+    baseline = asyncio.run(_healthy_miss_baseline(env, mode))
+    deadline = _relative_deadline(baseline)
+    print(json.dumps({"scenario": "relative_deadline_calibration_not_SLO", "mode": mode,
+                      "healthy_miss_seconds": baseline, "maximum_seconds": max(baseline),
+                      "factor": 2, "deadline_seconds": deadline}, sort_keys=True))
     generator = GatedSelector(env)
-    stall = PromptCountStall(env.budget)
+    # Keep the gate longer than the measured HTTP deadline plus existing control
+    # watchdogs. Otherwise a larger relative deadline could release itself early.
+    stall = PromptCountStall(env.budget, wait_seconds=deadline + 2 * WAIT)
     runtime = CompletionObservedRuntime(env.manager, generator, cache=GovernedResponseCache(),
                                          token_counter=stall, max_generator_calls=1,
                                          config=AnswerConfig(max_primary_attempts=1))
     app = create_app(runtime=runtime, settings=configuration(),
-                     http_config=HttpConfig(workers=1, max_queue=0, deadline_seconds=8,
+                     http_config=HttpConfig(workers=1, max_queue=0, deadline_seconds=deadline,
                                             rate_requests=100, perimeter_requests=200))
 
     async def exercise():
@@ -377,11 +438,17 @@ def test_deadline_keeps_stalled_query_worker_until_release_then_recovers(physica
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://p8-local") as client:
                 try:
+                    initial = await gauges(client)
+                    assert initial["cache_entries"] == initial["cache_hits"] == initial["cache_misses"] == 0
+                    assert initial["query_pending"] == initial["query_active"] == initial["query_queued"] == 0
+                    started = perf_counter()
                     task = asyncio.create_task(client.post("/v1/answer", headers=HEADERS, json=body(FEES)))
                     await event_wait(stall.entered)
                     assert stall.observed_tokens > 0 and generator.calls == []
-                    timed_out = await asyncio.wait_for(task, WAIT)
+                    timed_out = await asyncio.wait_for(task, deadline + WAIT)
+                    timeout_elapsed = perf_counter() - started
                     assert_error(timed_out, 504, "request_timeout")
+                    assert timeout_elapsed >= deadline, "504 must follow the calibrated HTTP deadline"
                     assert not stall.release.is_set() and not runtime.execution_finished.is_set()
                     occupied = await gauges(client)
                     assert (occupied["query_pending"], occupied["query_active"], occupied["query_queued"]) == (1, 1, 0)
@@ -399,7 +466,9 @@ def test_deadline_keeps_stalled_query_worker_until_release_then_recovers(physica
                     idle = await gauges(client)
                     assert (idle["query_pending"], idle["query_active"], idle["query_queued"]) == (0, 0, 0)
                     assert idle["cache_entries"] == 0 and generator.calls == []
+                    started = perf_counter()
                     recovery = await client.post("/v1/answer", headers=HEADERS, json=body(RECOVERY))
+                    recovery_elapsed = perf_counter() - started
                     recovered = assert_answer(recovery, RECOVERY, cached=False)
                     warm = await client.post("/v1/answer", headers=HEADERS, json=body(RECOVERY))
                     hit = assert_answer(warm, RECOVERY, cached=True)
@@ -413,7 +482,11 @@ def test_deadline_keeps_stalled_query_worker_until_release_then_recovers(physica
                     assert generator.calls == [RECOVERY] and generator.max_active == 1
                     print(json.dumps({"scenario": "controlled_sync_prompt_count_stall_not_provider_or_SLO",
                                       "mode": mode, "deadline_504": 1, "while_stalled_429": 1,
-                                      "physical_query_active_before_release": 1, "recovery": "answered"}, sort_keys=True))
+                                      "physical_query_active_before_release": 1, "recovery": "answered",
+                                      "healthy_miss_seconds": baseline, "deadline_seconds": deadline,
+                                      "timeout_elapsed_seconds": timeout_elapsed,
+                                      "recovery_miss_seconds": recovery_elapsed,
+                                      "cache_hits": final["cache_hits"], "cache_misses": final["cache_misses"]}, sort_keys=True))
                 finally:
                     stall.release.set()
                     generator.release_all()
