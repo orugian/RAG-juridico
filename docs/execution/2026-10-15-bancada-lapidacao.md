@@ -17,15 +17,28 @@ Decisões do usuário (15/10): manter VPS e usuário `claw`; Ubuntu será atuali
 | Publicação | `app/publish.py`: ledger novo por publicação + cópia do journal vivo, decisões da bancada aplicadas, build/promote pelo gerenciador aceito, **cache de embeddings** por texto e identidade do encoder (republicações recalculam só o que mudou), troca com ~1 min fora do ar; fontes bloqueadas no journal nunca são republicadas |
 | Bancada | `http://100.118.65.94:8790/ui`: Consultar (com busca de contrato e avaliação), Rastreios (o que foi recuperado, oferecido ao modelo, escolhido e citado; tempos), Avaliação (casos e execuções), Documentos (partes, referências, relações), Pendências (reservados, rejeitados, sem texto), Publicar |
 
-## Primeira publicação com a nova pipeline (em andamento)
+## Primeira publicação com a nova pipeline — no ar desde 17:00
 
-`pub-20261015T151454`, iniciada 12:14 como unidade isolada (`MemoryMax=5G`), sem ativação automática; o MVP continua no ar até a troca.
+`pub-20261015T151454`, unidade isolada (`MemoryMax=5G`); o MVP serviu normalmente durante o build. Um observador trocou o serviço para `~/rag-juridico/next` ao final (backup da unidade antiga em `~/rag-juridico/rag-juridico.service.mvp-backup`; log em `data/logs/switch.log`: `activate rc=0 health ok`).
 
 | Etapa | Valor |
 |---|---|
 | Staging | 266 documentos com texto (eram 202), 21 sem texto (PDF/DOCX com falha) |
 | Bundle | **225 fontes** (eram 174), 4.475 cláusulas, 4.667 trechos, 22 reservados (sem partes), 19 rejeitados, 0 relações |
-| Embedding | ~16 trechos/min com 4 threads a 350% de CPU; término estimado ~17h15 |
+| Embedding | 4.667 trechos calculados (cache vazio na primeira vez); build + promoção em **4h45** |
+| Bancada | 3.786 referências pendentes de vínculo (as não resolvidas, inclusive dos 51 documentos novos) |
+
+### Latência na nova geração (encoder 4 threads)
+
+| Cenário | p50 | p95 | Erros |
+|---|---|---|---|
+| 1 usuário | 4,6 s | 5,0 s | 0 |
+| 3 usuários | 4,2 s | 6,4 s | 0 |
+| 5 usuários | 6,6 s | 10,1 s | 2/20 (1 × 504, 1 × 429) |
+
+Por etapa (rastreios): embedding da pergunta 0,4–1,3 s; LLM 0,9–2,3 s típico, com picos de 9–11 s no OpenRouter. O 504 com 5 usuários foi uma chamada ao LLM que não respondeu dentro do prazo de 30 s; o 429 vem da capacidade do gerador (até 5 chamadas físicas simultâneas, mantidas mesmo após o abandono por prazo). O tempo é dominado pelo provedor.
+
+**Correção pós-troca:** a primeira pergunta após a troca levou 78 s (embedding de 23,8 s — aquecimento do PyTorch na primeira inferência) e deu 504. O serviço agora faz duas inferências de aquecimento antes de abrir a porta (sobe em ~100 s); primeira pergunta após reinício: 4,7 s.
 
 ## Testes e revisão
 

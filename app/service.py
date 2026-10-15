@@ -139,6 +139,12 @@ def compose(service: ServiceSettings, settings, runtime, workbench=None):
     return WorkbenchDispatcher(api, panel)
 
 
+def warm_up(runtime, rounds=2):
+    """First PyTorch inference after start is slow (kernel/JIT warm-up): pay it before serving."""
+    for _ in range(rounds):
+        runtime.manager.embeddings.embed_query("Qual o valor dos honorários previstos no contrato?")
+
+
 def create_service_app():
     from app.config import Settings
     settings, service = Settings(), ServiceSettings()
@@ -150,4 +156,5 @@ def create_service_app():
     # Warm the verified artifact load and review validation before serving.
     if not runtime.manager.readiness():
         raise RuntimeError("active generation is not ready")
+    warm_up(runtime)
     return compose(service, settings, runtime, workbench)

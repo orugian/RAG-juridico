@@ -77,3 +77,13 @@ def test_composed_service_answers_extractively_through_injected_provider(environ
     assert data["status"] == "answered" and len(fake.calls) == 1
     quotes = {unit.verbatim_text for unit in env.bundle.units}
     assert data["citations"] and all(c["quote"] in quotes and c["parties"] for c in data["citations"])
+
+
+
+def test_warm_up_runs_query_embeddings_before_serving():
+    from types import SimpleNamespace
+    from app.service import warm_up
+    calls = []
+    runtime = SimpleNamespace(manager=SimpleNamespace(embeddings=SimpleNamespace(embed_query=calls.append)))
+    warm_up(runtime)
+    assert len(calls) == 2 and all(isinstance(text, str) and text for text in calls)

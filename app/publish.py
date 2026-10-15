@@ -296,9 +296,15 @@ def main(argv=None):
     if arguments.name and not re.fullmatch(r"pub-[A-Za-z0-9_-]+", arguments.name):
         parser.error("invalid publication name")
     if arguments.activate_only:
-        current = read_current(Path(arguments.data_root))
+        data_root = Path(arguments.data_root)
+        current = read_current(data_root)
         journal_id = current["journal_id"] if current else arguments.journal_id
-        activate_publication(Path(arguments.data_root), arguments.activate_only, journal_id)
+        activate_publication(data_root, arguments.activate_only, journal_id)
+        from app.workbench.store import WorkbenchStore
+        store = WorkbenchStore(data_root / "workbench.sqlite")
+        for row in store.publications():
+            if row["name"] == arguments.activate_only and row["state"] == "promoted":
+                store.finish_publication(row["id"], "published", row["report"] or {})
         return
     publish(Path(arguments.data_root), reviewer=arguments.reviewer, reason=arguments.reason,
             accept_metadata_mismatch=not arguments.strict, self_bind_unresolved_references=not arguments.strict,
