@@ -2,7 +2,7 @@
 import pytest
 
 from app.ingestion.review_store import ReviewStore
-from app.serving import ServingGenerationManager, SnapshotReviewAuthority
+from app.serving import ServingGenerationManager, ServingVectorStore, SnapshotReviewAuthority
 from tests.p6_corpus import build_p6_environment
 
 
@@ -11,10 +11,69 @@ def env(tmp_path):
     return build_p6_environment(tmp_path)
 
 
-def serving(env):
+def serving(env, vector_store=None):
     return ServingGenerationManager(env.manager.root, configuration=env.manager.configuration,
-                                    embeddings=env.encoder, vector_store=env.vector_store,
+                                    embeddings=env.encoder, vector_store=vector_store or env.vector_store,
                                     ledger=env.ledger, journal=env.journal, journal_id="p6-test")
+
+
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+class CountingVectorStore(ServingVectorStore):
+    reads = 0
+
+    def _read_collection(self, collection):
+        type(self).reads += 1
+        return super()._read_collection(collection)
+
+
+def test_vector_projection_is_verified_once_then_reused_until_expiry(env):
+    clock = Clock()
+    store = CountingVectorStore(mode="embedded", dimension=3, max_age_seconds=600, clock=clock)
+    manager = serving(env, store)
+    pinned = manager.pin(env.query_access())
+    after_load = CountingVectorStore.reads
+    vector = env.encoder.embed_query("honorários")
+    allowed = sorted(pinned.allowed_sources())
+    first = store.query(pinned.loaded.directory, pinned.loaded.manifest.vector, vector, allowed_source_ids=allowed, k=3)
+    second = store.query(pinned.loaded.directory, pinned.loaded.manifest.vector, vector, allowed_source_ids=allowed, k=3)
+    assert first == second and CountingVectorStore.reads == after_load
+    clock.now += 601
+    store.query(pinned.loaded.directory, pinned.loaded.manifest.vector, vector, allowed_source_ids=allowed, k=3)
+    assert CountingVectorStore.reads == after_load + 1
+
+
+def test_cached_vector_query_still_enforces_authorized_sources(env):
+    store = ServingVectorStore(mode="embedded", dimension=3)
+    manager = serving(env, store)
+    pinned = manager.pin(env.query_access())
+    only = next(s.source_id for s in env.bundle.sources if s.instrument_id == "doc:201")
+    results = store.query(pinned.loaded.directory, pinned.loaded.manifest.vector, env.encoder.embed_query("locação"),
+                          allowed_source_ids=[only], k=10)
+    by_chunk = {c.chunk_id: c.source_id for c in env.bundle.chunks}
+    assert results and {by_chunk[chunk_id] for chunk_id, _ in results} == {only}
+
+
+def test_cached_vector_query_rejects_chroma_rows_that_diverge_from_verified_projection(env):
+    store = ServingVectorStore(mode="embedded", dimension=3)
+    manager = serving(env, store)
+    pinned = manager.pin(env.query_access())
+    directory, descriptor = pinned.loaded.directory, pinned.loaded.manifest.vector
+    with store._client(directory, create=False) as client:
+        collection = client.get_collection(descriptor.collection, embedding_function=None)
+        target = collection.get(limit=1, include=["embeddings"])
+        collection.update(ids=[target["ids"][0]], documents=["texto adulterado"],
+                          embeddings=[target["embeddings"][0].tolist()])
+    with pytest.raises(ValueError):
+        for _ in range(3):
+            store.query(directory, descriptor, env.encoder.embed_query("texto adulterado"),
+                        allowed_source_ids=sorted(pinned.allowed_sources()), k=10)
 
 
 def _unit_key(unit):

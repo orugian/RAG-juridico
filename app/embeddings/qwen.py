@@ -36,7 +36,9 @@ class QwenProfile:
     max_batch_tokens: int = 2048
     max_request_documents: int = 64
     max_text_characters: int = 65536
-    cpu_threads: int = 6
+    # Matches the 4 vCPU production host: 6 threads oversubscribed it (query p95
+    # 1.92 s vs 0.81 s with 4, see docs/execution/2026-10-14-bloco2-qualificacao-linux.md).
+    cpu_threads: int = 4
 
     def __post_init__(self):
         limits = ((self.max_input_tokens, 1, 32768), (self.max_batch_size, 1, 16),

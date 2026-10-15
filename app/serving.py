@@ -24,12 +24,14 @@ import os
 from pathlib import Path
 import sqlite3
 import threading
+import time
 
 from app.ingestion.evidence import validate_unit_decisions
 from app.ingestion.review_store import ReviewRecord, ReviewSubject
 from app.retrieval.generation_store import ARTIFACT_NAMES
 from app.retrieval.generations import GenerationManager
 from app.retrieval.review_authority import ReadOnlyReviewAuthority, _controlled_read
+from app.retrieval.vector_store import ChromaVectorStore
 
 _RELOAD_ATTEMPTS = 5
 
@@ -113,6 +115,47 @@ class SnapshotReviewAuthority(ReadOnlyReviewAuthority):
         return self._cached_digest("relation", super().relation_state_digest)
 
 
+class ServingVectorStore(ChromaVectorStore):
+    """Chroma projection verified once, then reused for every query.
+
+    The accepted ``query`` re-reads and re-hashes the whole collection on every
+    request (measured 5-10 s with 3,769 x 1,024 vectors). Here ``read`` returns
+    the last fully verified projection while the Chroma database file keeps its
+    identity (inode/size) and the verification is younger than ``max_age``.
+    Chroma rewrites the file's mtime on every open, so mtime is not used.
+    ``query`` still checks that every returned row matches that verified
+    projection and the authorized sources; citations never come from Chroma.
+    """
+
+    def __init__(self, *args, max_age_seconds: float = 600.0, clock=time.monotonic, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._max_age, self._clock = max_age_seconds, clock
+        self._verified_lock = threading.Lock()
+        self._verified = {}
+
+    def _identity(self, directory):
+        if self.mode != "embedded":
+            return None
+        info = os.stat(Path(directory) / "chroma" / "chroma.sqlite3")
+        return info.st_dev, info.st_ino, info.st_size
+
+    def invalidate(self):
+        with self._verified_lock:
+            self._verified.clear()
+
+    def read(self, directory, descriptor):
+        key = (str(Path(directory).resolve()), descriptor.model_dump_json())
+        identity = self._identity(directory)
+        with self._verified_lock:
+            cached = self._verified.get(key)
+        if cached is not None and cached[0] == identity and self._clock() - cached[1] < self._max_age:
+            return cached[2]
+        rows = super().read(directory, descriptor)
+        with self._verified_lock:
+            self._verified[key] = (identity, self._clock(), rows)
+        return rows
+
+
 class ServingGenerationManager(GenerationManager):
     _MAX_REVIEW_ENTRIES = 16
 
@@ -128,16 +171,23 @@ class ServingGenerationManager(GenerationManager):
         names = sorted((*ARTIFACT_NAMES, "manifest.json", "READY"))
         result = []
         for name in names:
-            info = os.stat(Path(directory) / name)
+            try:
+                info = os.stat(Path(directory) / name)
+            except FileNotFoundError:
+                return None  # incomplete (e.g. staging during build): never cached
             result.append((name, info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns))
         return tuple(result)
 
     def _load(self, directory, manifest, manifest_hash):
         key = (str(Path(directory).resolve()), manifest_hash)
         signature = self._signature(directory)
+        if signature is None:
+            return super()._load(directory, manifest, manifest_hash)
         with self._cache_lock:
             cached = self._loaded.get(key)
         if cached is None or cached[0] != signature:
+            if hasattr(self.vector_store, "invalidate"):
+                self.vector_store.invalidate()  # a full load always re-reads Chroma
             loaded = super()._load(directory, manifest, manifest_hash)  # full verification
             if self._signature(directory) == signature:
                 with self._cache_lock:

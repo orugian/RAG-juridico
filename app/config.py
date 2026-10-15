@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     embedding_max_input_tokens: int = Field(default=1024, ge=1, le=32768)
     embedding_max_batch_size: int = Field(default=2, ge=1, le=16)
     embedding_max_batch_tokens: int = Field(default=2048, ge=1, le=32768)
-    embedding_cpu_threads: int = Field(default=6, ge=1, le=16)
+    embedding_cpu_threads: int = Field(default=4, ge=1, le=16)
     chroma_mode: Literal["embedded", "server"] = "embedded"
     chroma_host: str = "127.0.0.1"
     chroma_port: int = Field(default=8001, ge=1, le=65535)

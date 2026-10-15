@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Andrade Advogados — Bancada</title>
+<style>
+  :root { --fg:#1d2433; --muted:#5b6475; --line:#d8dce4; --bg:#f6f7f9; --card:#fff; --accent:#1f4e8c; --ok:#1d6b3a; --bad:#9b2226; --warn:#8a5a00; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--fg); background:var(--bg); }
+  header { background:#14213d; color:#fff; padding:10px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0 12px 0 0; }
+  header label { font-size:13px; display:flex; gap:6px; align-items:center; }
+  header input { padding:4px 6px; border-radius:4px; border:1px solid #445; }
+  nav { display:flex; gap:4px; padding:8px 16px 0; background:#e9ecf1; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  nav button { border:1px solid var(--line); border-bottom:none; background:#f3f5f8; padding:8px 14px; border-radius:6px 6px 0 0; cursor:pointer; font-size:14px; }
+  nav button[aria-selected="true"] { background:var(--card); font-weight:600; color:var(--accent); }
+  main { padding:16px; max-width:1300px; margin:0 auto; }
+  section[hidden] { display:none; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .grow { flex:1 1 300px; }
+  label.block { display:block; font-size:13px; color:var(--muted); margin-bottom:4px; }
+  textarea, input[type=text], input[type=search], select { width:100%; padding:7px 8px; border:1px solid #b9c0cc; border-radius:5px; font:inherit; }
+  textarea { min-height:70px; resize:vertical; }
+  button.primary { background:var(--accent); color:#fff; border:none; padding:8px 16px; border-radius:5px; cursor:pointer; font-weight:600; }
+  button.secondary { background:#fff; color:var(--accent); border:1px solid var(--accent); padding:6px 12px; border-radius:5px; cursor:pointer; }
+  button.link { background:none; border:none; color:var(--accent); cursor:pointer; padding:0; text-decoration:underline; font:inherit; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  :focus-visible { outline:3px solid #f2a541; outline-offset:2px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; border:1px solid var(--line); background:#f3f5f8; margin:2px 4px 2px 0; }
+  .st-answered { color:var(--ok); border-color:var(--ok); } .st-abstained { color:var(--warn); border-color:var(--warn); }
+  .st-needs_clarification { color:var(--accent); border-color:var(--accent); } .st-error { color:var(--bad); border-color:var(--bad); }
+  pre.answer { white-space:pre-wrap; background:#fbfbfc; border:1px solid var(--line); padding:10px; border-radius:6px; font:14px/1.5 ui-monospace, Consolas, monospace; max-height:520px; overflow:auto; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th { background:#f3f5f8; font-weight:600; }
+  tr.clickable { cursor:pointer; } tr.clickable:hover { background:#f0f4fa; }
+  .unit { border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin:8px 0; }
+  .unit h4 { margin:0 0 6px; font-size:14px; }
+  .unit .text { white-space:pre-wrap; font-size:13.5px; }
+  .ref { background:#fff8e6; border:1px solid #f0d58a; border-radius:5px; padding:6px 8px; margin-top:6px; font-size:13px; }
+  .ref.done { background:#eef7f0; border-color:#a6d4b4; }
+  .chips span { display:inline-flex; align-items:center; gap:4px; background:#e6eef9; border-radius:12px; padding:2px 8px; margin:2px; font-size:13px; }
+  .status { min-height:20px; font-size:13px; }
+  .status.error { color:var(--bad); } .status.ok { color:var(--ok); }
+  .offered.selected { border-color:var(--ok); background:#f2faf4; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:14px; }
+  .kpi { display:flex; gap:12px; flex-wrap:wrap; } .kpi div { background:#f3f5f8; border-radius:6px; padding:8px 12px; min-width:120px; }
+  .kpi b { display:block; font-size:20px; }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<header>
+  <h1>RAG Andrade Advogados · Bancada de lapidação</h1>
+  <label>Chave <input id="key" type="password" autocomplete="off" size="22" aria-label="Chave de API do operador"></label>
+  <label>Revisor <input id="reviewer" type="text" size="16" aria-label="Nome do revisor"></label>
+  <button class="secondary" id="saveSession" type="button">Salvar</button>
+  <span id="genInfo" class="muted" style="color:#cfd6e4"></span>
+</header>
+<nav role="tablist" aria-label="Seções">
+  <button role="tab" data-tab="ask" aria-selected="true">Consultar</button>
+  <button role="tab" data-tab="traces" aria-selected="false">Rastreios</button>
+  <button role="tab" data-tab="eval" aria-selected="false">Avaliação</button>
+  <button role="tab" data-tab="docs" aria-selected="false">Documentos</button>
+  <button role="tab" data-tab="pending" aria-selected="false">Pendências</button>
+  <button role="tab" data-tab="publish" aria-selected="false">Publicar</button>
+</nav>
+<main>
+<div id="globalStatus" class="status" role="status" aria-live="polite"></div>
+
+<!-- CONSULTAR -->
+<section id="tab-ask" role="tabpanel">
+  <div class="card">
+    <label class="block" for="question">Pergunta</label>
+    <textarea id="question" placeholder="Ex.: Qual o valor dos honorários?"></textarea>
+    <div class="row" style="margin-top:8px">
+      <div class="grow">
+        <label class="block" for="contractSearch">Limitar a contratos (busque por título, parte, CNPJ ou nº)</label>
+        <input id="contractSearch" type="search" placeholder="digite e escolha na lista" list="contractOptions" autocomplete="off">
+        <datalist id="contractOptions"></datalist>
+        <div class="chips" id="contractChips" aria-label="Contratos selecionados"></div>
+      </div>
+      <button class="primary" id="askBtn" type="button">Perguntar</button>
+    </div>
+  </div>
+  <div id="answerCard" class="card" hidden>
+    <div class="row" style="justify-content:space-between">
+      <div><span id="answerStatus" class="pill"></span> <span id="answerMeta" class="muted"></span></div>
+      <button class="link" id="openTrace" type="button">ver rastreio desta resposta</button>
+    </div>
+    <div id="clarify" style="margin:8px 0"></div>
+    <pre class="answer" id="answerText"></pre>
+    <h3 style="font-size:15px">Avaliar esta resposta</h3>
+    <form id="feedbackForm" class="row">
+      <fieldset style="border:none;padding:0;margin:0">
+        <legend class="sr-only">Avaliação</legend>
+        <label><input type="radio" name="rating" value="good"> Correta</label>
+        <label><input type="radio" name="rating" value="bad"> Com problema</label>
+      </fieldset>
+      <div class="grow"><label class="block" for="fbCategory">Tipo</label>
+        <select id="fbCategory">
+          <option value="correct">Correta</option><option value="wrong_contract">Contrato errado</option>
+          <option value="missing_clause">Faltou cláusula/condição</option><option value="wrong_clause">Cláusula errada</option>
+          <option value="wrong_parties">Partes erradas</option><option value="should_abstain">Deveria ter se abstido</option>
+          <option value="should_answer">Deveria ter respondido</option><option value="other">Outro</option>
+        </select></div>
+      <div class="grow"><label class="block" for="fbComment">Comentário</label><input id="fbComment" type="text"></div>
+      <div style="flex-basis:100%"><label><input type="checkbox" id="fbCase"> Transformar em caso de avaliação</label></div>
+      <div id="fbCaseFields" class="row" style="flex-basis:100%" hidden>
+        <div><label class="block" for="fbExpStatus">Status esperado</label>
+          <select id="fbExpStatus"><option value="answered">respondida</option><option value="abstained">abstenção</option><option value="needs_clarification">pedir esclarecimento</option></select></div>
+        <div class="grow"><label class="block" for="fbExpDocs">Contratos que devem ser citados (doc:N separados por vírgula)</label><input id="fbExpDocs" type="text"></div>
+        <div class="grow"><label class="block" for="fbExpTerms">Termos que devem aparecer no trecho (vírgula)</label><input id="fbExpTerms" type="text"></div>
+      </div>
+      <button class="primary" type="submit">Enviar avaliação</button>
+    </form>
+  </div>
+</section>
+
+<!-- RASTREIOS -->
+<section id="tab-traces" role="tabpanel" hidden>
+  <div class="card">
+    <div id="stats" class="kpi"></div>
+    <div class="row" style="margin-top:10px">
+      <div><label class="block" for="trStatus">Status</label>
+        <select id="trStatus"><option value="">todos</option><option value="answered">respondidas</option><option value="abstained">abstenções</option><option value="needs_clarification">esclarecimento</option></select></div>
+      <div><label class="block" for="trFeedback">Avaliação</label>
+        <select id="trFeedback"><option value="">todas</option><option value="negative">com problema</option><option value="any">avaliadas</option></select></div>
+      <button class="secondary" id="trReload" type="button">Atualizar</button>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card"><table><thead><tr><th>Quando</th><th>Pergunta</th><th>Status</th><th>s</th><th>Aval.</th></tr></thead><tbody id="trList"></tbody></table></div>
+    <div class="card" id="trDetail"><p class="muted">Escolha um rastreio para ver o que foi recuperado, o que o modelo escolheu e o que foi citado.</p></div>
+  </div>
+</section>
+
+<!-- AVALIAÇÃO -->
+<section id="tab-eval" role="tabpanel" hidden>
+  <div class="card">
+    <h3 style="margin-top:0;font-size:15px">Novo caso</h3>
+    <div class="row">
+      <div class="grow"><label class="block" for="cQuestion">Pergunta</label><input id="cQuestion" type="text"></div>
+      <div><label class="block" for="cDocs">Filtrar contratos (doc:N)</label><input id="cDocs" type="text"></div>
+      <div><label class="block" for="cStatus">Esperado</label><select id="cStatus"><option value="answered">respondida</option><option value="abstained">abstenção</option><option value="needs_clarification">esclarecimento</option></select></div>
+      <div><label class="block" for="cExpDocs">Deve citar (doc:N)</label><input id="cExpDocs" type="text"></div>
+      <div><label class="block" for="cTerms">Termos no trecho</label><input id="cTerms" type="text"></div>
+      <button class="secondary" id="cAdd" type="button">Adicionar</button>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card"><div class="row" style="justify-content:space-between"><h3 style="margin:0;font-size:15px">Casos (<span id="caseCount">0</span>)</h3><button class="primary" id="runEval" type="button">Rodar avaliação</button></div>
+      <table><thead><tr><th>Pergunta</th><th>Filtro</th><th>Esperado</th><th></th></tr></thead><tbody id="caseList"></tbody></table></div>
+    <div class="card"><h3 style="margin-top:0;font-size:15px">Execuções</h3><table><thead><tr><th>Quando</th><th>Geração</th><th>Acerto</th><th>p50</th><th>Estado</th></tr></thead><tbody id="runList"></tbody></table>
+      <div id="runDetail"></div></div>
+  </div>
+</section>
+
+<!-- DOCUMENTOS -->
+<section id="tab-docs" role="tabpanel" hidden>
+  <div class="grid2">
+    <div class="card">
+      <label class="block" for="docSearch">Buscar documento (título, parte, CNPJ, nº)</label>
+      <input id="docSearch" type="search">
+      <label style="font-size:13px"><input type="checkbox" id="docOnlyOpen"> só com referências pendentes</label>
+      <table><thead><tr><th>Doc</th><th>Título / partes</th><th>Ref. pend.</th></tr></thead><tbody id="docList"></tbody></table>
+    </div>
+    <div class="card" id="docDetail"><p class="muted">Escolha um documento para corrigir partes, vincular referências entre cláusulas e cadastrar relações com aditivos/distratos. As mudanças entram na próxima publicação.</p></div>
+  </div>
+</section>
+
+<!-- PENDÊNCIAS -->
+<section id="tab-pending" role="tabpanel" hidden>
+  <div class="card"><h3 style="margin-top:0;font-size:15px">Reservados — sem partes identificadas</h3>
+    <p class="muted">Informe as partes para que o documento entre na próxima publicação.</p>
+    <table><thead><tr><th>Doc</th><th>Título</th><th>Situação</th><th></th></tr></thead><tbody id="reservedList"></tbody></table>
+    <div id="reservedDetail"></div></div>
+  <div class="grid2">
+    <div class="card"><h3 style="margin-top:0;font-size:15px">Rejeitados na validação</h3><table><tbody id="rejectedList"></tbody></table></div>
+    <div class="card"><h3 style="margin-top:0;font-size:15px">Sem texto extraído</h3><table><tbody id="skippedList"></tbody></table></div>
+  </div>
+</section>
+
+<!-- PUBLICAR -->
+<section id="tab-publish" role="tabpanel" hidden>
+  <div class="card">
+    <p>Mudanças salvas desde a última publicação: <b id="pubPending">—</b></p>
+    <p class="muted">A publicação cria um ledger novo com as suas decisões, reconstrói o índice (reaproveitando embeddings já calculados) e troca o serviço para a nova versão, com cerca de 1 minuto fora do ar ao final. Bloqueios feitos no journal são mantidos.</p>
+    <div class="row"><div class="grow"><label class="block" for="pubReason">Motivo da publicação (vai para o ledger)</label><input id="pubReason" type="text"></div>
+      <label><input type="checkbox" id="pubStrict"> modo estrito (não aceitar divergências nem referências sem revisão)</label>
+      <button class="primary" id="pubBtn" type="button">Publicar</button></div>
+  </div>
+  <div class="card"><h3 style="margin-top:0;font-size:15px">Histórico</h3><table><thead><tr><th>Início</th><th>Nome</th><th>Revisor</th><th>Estado</th><th>Resumo</th></tr></thead><tbody id="pubList"></tbody></table>
+    <h4 style="font-size:14px">Log da última publicação</h4><pre class="answer" id="pubLog" style="max-height:260px"></pre></div>
+</section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STATUS = {answered:"respondida", abstained:"abstenção", needs_clarification:"esclarecimento", error:"erro"};
+let selected = [], lastAnswer = null, catalog = [];
+
+$("key").value = localStorage.getItem("ragKey") || "";
+$("reviewer").value = localStorage.getItem("ragReviewer") || "";
+$("saveSession").onclick = () => { localStorage.setItem("ragKey", $("key").value.trim()); localStorage.setItem("ragReviewer", $("reviewer").value.trim()); say("Sessão salva neste navegador.", "ok"); boot(); };
+
+function say(text, kind) { const el = $("globalStatus"); el.textContent = text; el.className = "status " + (kind || ""); }
+async function api(path, options = {}) {
+  const headers = {"X-API-Key": localStorage.getItem("ragKey") || "", "X-Reviewer": localStorage.getItem("ragReviewer") || "revisor"};
+  if (options.body) headers["Content-Type"] = "application/json";
+  const response = await fetch(path, {...options, headers, body: options.body ? JSON.stringify(options.body) : undefined});
+  let data = null; try { data = await response.json(); } catch (e) {}
+  if (!response.ok) { const code = (data && (data.detail || data.code)) || response.status; throw new Error(`HTTP ${response.status}: ${code}`); }
+  return data;
+}
+const run = (fn) => async (...args) => { try { await fn(...args); } catch (e) { say(e.message, "error"); } };
+
+document.querySelectorAll("nav button").forEach(button => button.onclick = () => {
+  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", b === button));
+  document.querySelectorAll("main section").forEach(s => s.hidden = s.id !== "tab-" + button.dataset.tab);
+  ({traces: loadTraces, eval: loadEval, docs: loadDocs, pending: loadPending, publish: loadPublish})[button.dataset.tab]?.();
+});
+function goTab(name) { document.querySelector(`nav button[data-tab="${name}"]`).click(); }
+
+const boot = run(async () => {
+  const o = await api("/wb/api/overview");
+  $("genInfo").textContent = `geração ${o.generation_id} · ${o.publication || ""} · ${o.documents} docs · ${o.units} cláusulas · ${o.open_references} refs pendentes · ${o.reserved} reservados`;
+  catalog = await api("/wb/api/catalog");
+  $("contractOptions").innerHTML = catalog.map(d => `<option value="${esc(d.instrument_id)} — ${esc(d.title.slice(0, 80))}">`).join("");
+  say("");
+});
+
+// ---- Consultar ----
+$("contractSearch").addEventListener("change", () => {
+  const id = ($("contractSearch").value.match(/doc:\d+/) || [])[0];
+  if (id && !selected.includes(id)) { selected.push(id); renderChips(); }
+  $("contractSearch").value = "";
+});
+function renderChips() {
+  $("contractChips").innerHTML = selected.map(id => `<span>${esc(id)} <button class="link" aria-label="remover ${esc(id)}" data-id="${esc(id)}">×</button></span>`).join("");
+  $("contractChips").querySelectorAll("button").forEach(b => b.onclick = () => { selected = selected.filter(x => x !== b.dataset.id); renderChips(); });
+}
+$("askBtn").onclick = run(async () => {
+  const message = $("question").value.trim(); if (!message) return;
+  $("askBtn").disabled = true; say("Consultando…");
+  try {
+    const started = performance.now();
+    const data = await api("/chat", {method: "POST", body: {message, filters: {instrument_ids: selected}}});
+    lastAnswer = {...data, question: message, filters: [...selected]};
+    $("answerCard").hidden = false;
+    $("answerStatus").textContent = STATUS[data.status] + (data.reason_code ? " · " + data.reason_code : "");
+    $("answerStatus").className = "pill st-" + data.status;
+    $("answerMeta").textContent = `${((performance.now() - started) / 1000).toFixed(1)} s${data.cached ? " · cache" : ""} · ${data.citations.length} citação(ões)`;
+    $("answerText").textContent = data.response;
+    const options = [...new Set((data.response.match(/\[doc:\d+\]/g) || []).map(x => x.slice(1, -1)))];
+    $("clarify").innerHTML = data.status === "needs_clarification" && options.length
+      ? "Refazer a pergunta limitada a: " + options.map(id => `<button class="secondary" data-id="${id}" type="button">${id}</button>`).join(" ") : "";
+    $("clarify").querySelectorAll("button").forEach(b => b.onclick = () => { selected = [b.dataset.id]; renderChips(); $("askBtn").click(); });
+    $("fbExpDocs").value = [...new Set(data.citations.map(c => c.contract_id))].join(", ");
+    $("fbExpStatus").value = data.status;
+    $("feedbackForm").reset(); $("fbCaseFields").hidden = true;
+    say("");
+  } finally { $("askBtn").disabled = false; }
+});
+$("fbCase").onchange = () => $("fbCaseFields").hidden = !$("fbCase").checked;
+$("openTrace").onclick = () => { if (lastAnswer) { goTab("traces"); showTrace(lastAnswer.request_id); } };
+const list = (text) => text.split(",").map(x => x.trim()).filter(Boolean);
+$("feedbackForm").onsubmit = run(async (event) => {
+  event.preventDefault();
+  const rating = (document.querySelector('input[name="rating"]:checked') || {}).value;
+  if (!rating || !lastAnswer) { say("Escolha correta ou com problema.", "error"); return; }
+  const body = {request_id: lastAnswer.request_id, rating, category: rating === "good" ? "correct" : $("fbCategory").value, comment: $("fbComment").value};
+  if ($("fbCase").checked) body.case = {question: lastAnswer.question, instrument_ids: lastAnswer.filters, expected_status: $("fbExpStatus").value,
+    expected_instrument_ids: list($("fbExpDocs").value), expected_terms: list($("fbExpTerms").value), notes: $("fbComment").value};
+  const result = await api("/wb/api/feedback", {method: "POST", body});
+  say(result.case_id ? "Avaliação registrada e caso de teste criado." : "Avaliação registrada.", "ok");
+});
+
+// ---- Rastreios ----
+const loadTraces = run(async () => {
+  const o = await api("/wb/api/overview"); const s = o.stats;
+  const by = Object.fromEntries(s.by_status.map(r => [r.status || "erro", r.n]));
+  const fb = Object.fromEntries(s.feedback.map(r => [r.rating, r.n]));
+  $("stats").innerHTML = `<div><b>${by.answered || 0}</b>respondidas</div><div><b>${by.abstained || 0}</b>abstenções</div><div><b>${by.needs_clarification || 0}</b>esclarecimentos</div>`
+    + `<div><b>${s.p50_ms ? (s.p50_ms / 1000).toFixed(1) : "—"} s</b>p50</div><div><b>${s.p95_ms ? (s.p95_ms / 1000).toFixed(1) : "—"} s</b>p95</div>`
+    + `<div><b>${fb.good || 0} / ${fb.bad || 0}</b>👍 / 👎</div>`;
+  const params = new URLSearchParams(); if ($("trStatus").value) params.set("status", $("trStatus").value); if ($("trFeedback").value) params.set("feedback", $("trFeedback").value);
+  const rows = await api("/wb/api/traces?" + params);
+  $("trList").innerHTML = rows.map(r => `<tr class="clickable" tabindex="0" data-id="${esc(r.request_id)}"><td>${esc(r.created_at.slice(5, 16).replace("T", " "))}</td><td>${esc(r.question.slice(0, 90))}${r.filters.instrument_ids?.length ? `<br><span class="muted">${esc(r.filters.instrument_ids.join(", "))}</span>` : ""}</td><td><span class="pill st-${esc(r.status || "error")}">${esc(STATUS[r.status] || r.error_code || "erro")}</span></td><td>${r.latency_ms ? (r.latency_ms / 1000).toFixed(1) : ""}</td><td>${r.rating === "good" ? "👍" : r.rating === "bad" ? "👎" : ""}</td></tr>`).join("");
+  $("trList").querySelectorAll("tr").forEach(tr => { tr.onclick = () => showTrace(tr.dataset.id); tr.onkeydown = (e) => e.key === "Enter" && showTrace(tr.dataset.id); });
+});
+$("trReload").onclick = loadTraces; $("trStatus").onchange = loadTraces; $("trFeedback").onchange = loadTraces;
+const showTrace = run(async (id) => {
+  const t = await api("/wb/api/traces/" + encodeURIComponent(id));
+  const selectedSet = new Set(t.selected);
+  const timings = Object.entries(t.timings || {}).map(([k, v]) => `${k.replace("_s", "")}: ${(+v).toFixed(2)} s`).join(" · ");
+  $("trDetail").innerHTML = `<h3 style="margin-top:0;font-size:15px">${esc(t.question)}</h3>
+    <p><span class="pill st-${esc(t.status || "error")}">${esc(STATUS[t.status] || t.error_code)}</span> ${esc(t.reason_code || "")} ${t.detail_code ? `<span class="muted">(${esc(t.detail_code)})</span>` : ""} <span class="muted">${t.cached ? "cache · " : ""}${t.delivered ? "entregue" : "não entregue"}</span></p>
+    <p class="muted">Tempos: ${esc(timings) || "—"} · geração ${esc(t.generation_id || "")} · filtros: ${esc((t.filters.instrument_ids || []).join(", ") || "nenhum")}</p>
+    <h4 style="font-size:14px">Trechos oferecidos ao modelo (${t.offered_units.length}) — verde = escolhido</h4>
+    ${t.offered_units.map(u => `<div class="unit offered ${selectedSet.has(u.unit_id) ? "selected" : ""}"><h4>${esc(u.instrument_id)} · ${esc(u.label || "")} <button class="link" data-src="${esc(u.source_id || "")}">abrir documento</button></h4><div class="muted">${esc((u.title || "").slice(0, 120))}</div><div class="text">${esc((u.text || "").slice(0, 600))}${(u.text || "").length > 600 ? "…" : ""}</div></div>`).join("") || '<p class="muted">Nenhum (a recuperação não chegou ao modelo).</p>'}
+    <details><summary>Resposta bruta do modelo</summary><pre class="answer">${esc(t.llm_raw || "—")}</pre></details>
+    <details><summary>Resposta entregue (${t.citations.length} citações)</summary><pre class="answer">${esc(t.response || "")}</pre></details>
+    <h4 style="font-size:14px">Avaliações</h4>${t.feedback.map(f => `<div>${f.rating === "good" ? "👍" : "👎"} ${esc(f.category)} — ${esc(f.comment)} <span class="muted">(${esc(f.reviewer)})</span></div>`).join("") || '<p class="muted">Nenhuma.</p>'}`;
+  $("trDetail").querySelectorAll("button[data-src]").forEach(b => b.onclick = () => { goTab("docs"); showDoc(b.dataset.src); });
+});
+
+// ---- Avaliação ----
+const loadEval = run(async () => {
+  const cases = await api("/wb/api/eval/cases");
+  $("caseCount").textContent = cases.length;
+  $("caseList").innerHTML = cases.map(c => `<tr><td>${esc(c.question)}</td><td>${esc(c.instrument_ids.join(", "))}</td><td>${esc(STATUS[c.expected_status])}${c.expected_instrument_ids.length ? "<br>cita " + esc(c.expected_instrument_ids.join(", ")) : ""}${c.expected_terms.length ? "<br>termos: " + esc(c.expected_terms.join(", ")) : ""}</td><td><button class="link" data-id="${c.id}">remover</button></td></tr>`).join("");
+  $("caseList").querySelectorAll("button").forEach(b => b.onclick = run(async () => { await api("/wb/api/eval/cases/" + b.dataset.id, {method: "DELETE"}); loadEval(); }));
+  const runs = await api("/wb/api/eval/runs");
+  $("runEval").disabled = runs.busy;
+  $("runList").innerHTML = runs.runs.map(r => `<tr class="clickable" data-id="${r.id}"><td>${esc(r.created_at.slice(5, 16).replace("T", " "))}</td><td>${esc(r.generation_id)}</td><td>${r.summary && r.summary.cases ? `${r.summary.passed}/${r.summary.cases} (${Math.round(r.summary.accuracy * 100)}%)` : "—"}</td><td>${r.summary && r.summary.p50_ms ? (r.summary.p50_ms / 1000).toFixed(1) + " s" : ""}</td><td>${esc(r.state)}</td></tr>`).join("");
+  $("runList").querySelectorAll("tr").forEach(tr => tr.onclick = run(async () => {
+    const results = await api("/wb/api/eval/runs/" + tr.dataset.id);
+    $("runDetail").innerHTML = `<table><thead><tr><th>Caso</th><th>Obtido</th><th>Verificações</th></tr></thead><tbody>${results.map(r => `<tr><td>${r.passed ? "✅" : "❌"} ${esc(r.question)}</td><td>${esc(STATUS[r.status] || r.status)}${r.request_id ? `<br><button class="link" data-req="${esc(r.request_id)}">rastreio</button>` : ""}</td><td>${esc(Object.entries(r.checks).map(([k, v]) => `${k}: ${v === true ? "ok" : v === false ? "falhou" : v}`).join(" · "))}</td></tr>`).join("")}</tbody></table>`;
+    $("runDetail").querySelectorAll("button[data-req]").forEach(b => b.onclick = () => { goTab("traces"); showTrace(b.dataset.req); });
+  }));
+  if (runs.busy) setTimeout(loadEval, 5000);
+});
+$("cAdd").onclick = run(async () => {
+  await api("/wb/api/eval/cases", {method: "POST", body: {question: $("cQuestion").value, instrument_ids: list($("cDocs").value), expected_status: $("cStatus").value, expected_instrument_ids: list($("cExpDocs").value), expected_terms: list($("cTerms").value)}});
+  ["cQuestion", "cDocs", "cExpDocs", "cTerms"].forEach(id => $(id).value = ""); say("Caso adicionado.", "ok"); loadEval();
+});
+$("runEval").onclick = run(async () => { await api("/wb/api/eval/run", {method: "POST"}); say("Avaliação em andamento…", "ok"); loadEval(); });
+
+// ---- Documentos ----
+let docTimer = null;
+const loadDocs = run(async () => {
+  const rows = await api("/wb/api/catalog?q=" + encodeURIComponent($("docSearch").value));
+  const filtered = $("docOnlyOpen").checked ? rows.filter(r => r.open_references) : rows;
+  $("docList").innerHTML = filtered.map(d => `<tr class="clickable" tabindex="0" data-src="${esc(d.source_id)}"><td>${esc(d.instrument_id)}${d.has_decision ? ' <span class="pill">editado</span>' : ""}</td><td>${esc(d.title.slice(0, 90))}<br><span class="muted">${esc(d.parties.map(p => p.name).join("; ").slice(0, 140))}</span></td><td>${d.open_references || ""}</td></tr>`).join("");
+  $("docList").querySelectorAll("tr").forEach(tr => { tr.onclick = () => showDoc(tr.dataset.src); tr.onkeydown = (e) => e.key === "Enter" && showDoc(tr.dataset.src); });
+});
+$("docSearch").oninput = () => { clearTimeout(docTimer); docTimer = setTimeout(loadDocs, 300); };
+$("docOnlyOpen").onchange = loadDocs;
+
+function partiesEditor(parties, idPrefix) {
+  const roles = ["contratante", "contratada", "locador", "locatario", "vendedor", "comprador", "anuente", "parte"];
+  const row = (p, i) => `<tr><td><input type="text" aria-label="Nome da parte ${i + 1}" value="${esc(p.name)}" data-f="name"></td><td><select aria-label="Papel da parte ${i + 1}" data-f="role">${roles.map(r => `<option ${r === p.role ? "selected" : ""}>${r}</option>`).join("")}</select></td><td><input type="text" aria-label="CPF/CNPJ da parte ${i + 1}" value="${esc(p.clean_identifier || "")}" data-f="clean_identifier"></td><td><button class="link" data-remove>remover</button></td></tr>`;
+  return `<table id="${idPrefix}Parties"><thead><tr><th>Nome</th><th>Papel</th><th>CPF/CNPJ</th><th></th></tr></thead><tbody>${parties.map(row).join("")}</tbody></table><button class="link" id="${idPrefix}AddParty" type="button">+ adicionar parte</button>`;
+}
+function wireParties(idPrefix) {
+  const body = $(idPrefix + "Parties").querySelector("tbody");
+  const wireRemove = () => body.querySelectorAll("button[data-remove]").forEach(b => b.onclick = () => b.closest("tr").remove());
+  wireRemove();
+  $(idPrefix + "AddParty").onclick = () => { body.insertAdjacentHTML("beforeend", partiesEditor([{name: "", role: "parte"}], "tmp").match(/<tbody>(.*)<\/tbody>/s)[1]); wireRemove(); };
+}
+function readParties(idPrefix) {
+  return [...$(idPrefix + "Parties").querySelectorAll("tbody tr")].map(tr => Object.fromEntries([...tr.querySelectorAll("[data-f]")].map(el => [el.dataset.f, el.value.trim() || null]))).filter(p => p.name);
+}
+
+const showDoc = run(async (sourceId) => {
+  const d = await api("/wb/api/document/" + encodeURIComponent(sourceId));
+  const dec = d.decision || {};
+  const parties = dec.parties || d.parties;
+  const unitOptions = d.units.map(u => `<option value="${esc(u.first_block)}">${esc(u.label)}</option>`).join("");
+  $("docDetail").innerHTML = `<h3 style="margin-top:0;font-size:15px">${esc(d.instrument_id)} <span class="muted">${esc(d.source_id)}</span></h3>
+    ${d.decision ? `<p class="muted">Correção salva por ${esc(dec.reviewer)} em ${esc(dec.updated_at.slice(0, 16))} — entra na próxima publicação. <button class="link" id="docClear">descartar correção</button></p>` : ""}
+    <label class="block" for="docTitle">Título</label><input id="docTitle" type="text" value="${esc(dec.title || d.title)}">
+    <h4 style="font-size:14px">Partes</h4>${partiesEditor(parties, "doc")}
+    <div class="row" style="margin-top:8px"><label><input type="checkbox" id="docExclude" ${dec.excluded_reason ? "checked" : ""}> retirar do índice (minuta, duplicado…)</label>
+      <div class="grow"><input id="docExcludeReason" type="text" aria-label="Motivo da retirada" placeholder="motivo" value="${esc(dec.excluded_reason || "")}"></div>
+      <button class="primary" id="docSave" type="button">Salvar correções</button></div>
+    <h4 style="font-size:14px">Relações com outros instrumentos</h4>
+    ${d.published_relations.map(r => `<div class="pill">${esc(r.from_instrument_id)} ${esc(r.relation_type)} ${esc(r.to_instrument_id)} (publicada)</div>`).join("")}
+    ${d.relation_decisions.map(r => `<div class="pill">${esc(r.from_instrument_id)} ${esc(r.relation_type)} ${esc(r.to_instrument_id)} <button class="link" data-rel="${esc(r.relation_key)}">remover</button></div>`).join("") || '<p class="muted">Nenhuma relação cadastrada.</p>'}
+    <details><summary>Este documento é aditivo/distrato de outro</summary>
+      <div class="row"><div><label class="block" for="relType">Tipo</label><select id="relType"><option value="amends">altera (aditivo)</option><option value="supplements">complementa</option><option value="terminates">extingue (distrato)</option><option value="supersedes">substitui</option></select></div>
+        <div class="grow"><label class="block" for="relBase">Contrato-base (doc:N)</label><input id="relBase" type="text" list="contractOptions"></div>
+        <button class="secondary" id="relLoad" type="button">carregar cláusulas do base</button></div>
+      <div class="row"><div class="grow"><label class="block" for="relSupport">Cláusulas DESTE documento que fazem a alteração</label><select id="relSupport" multiple size="6">${unitOptions}</select></div>
+        <div class="grow"><label class="block" for="relAffected">Cláusulas do contrato-base afetadas</label><select id="relAffected" multiple size="6"></select></div></div>
+      <button class="primary" id="relSave" type="button">Salvar relação</button></details>
+    <h4 style="font-size:14px">Cláusulas (${d.units.length})</h4>
+    ${d.units.map(u => `<div class="unit"><h4>${esc(u.label)}${u.closure.length ? ` <span class="muted">→ traz junto: ${esc(u.closure.join(", "))}</span>` : ""}</h4><div class="text">${esc(u.text)}</div>
+      ${u.references.filter(r => r.origin === "pending" || r.decision).map(r => `<div class="ref ${r.decision ? "done" : ""}" data-block="${esc(r.block_id)}" data-start="${r.start}" data-end="${r.end}" data-literal="${esc(r.literal)}">
+        Referência «${esc(r.literal)}» ${r.decision ? `— decisão salva: <b>${esc(r.decision.kind === "bind" ? "vincular a " + r.decision.target_block_ids.map(b => (d.units.find(x => x.block_ids.includes(b)) || {}).label || b).join(", ") : r.decision.kind === "external" ? "externa" : "sem vínculo")}</b> <button class="link" data-act="clear">desfazer</button>` : "— não vinculada (a cláusula referida não vem junto na resposta)"}
+        <div class="row"><div class="grow"><select aria-label="Cláusula referida" data-target>${unitOptions}</select></div>
+          <button class="secondary" data-act="bind" type="button">vincular</button><button class="secondary" data-act="external" type="button">é lei/outro documento</button><button class="secondary" data-act="unbound" type="button">manter sem vínculo</button></div></div>`).join("")}
+    </div>`).join("")}`;
+  wireParties("doc");
+  $("docSave").onclick = run(async () => {
+    const body = {title: $("docTitle").value.trim() || null, parties: readParties("doc"), excluded_reason: $("docExclude").checked ? ($("docExcludeReason").value.trim() || "retirado pelo revisor") : null};
+    await api("/wb/api/document/" + encodeURIComponent(sourceId), {method: "POST", body}); say("Correções salvas; entram na próxima publicação.", "ok"); showDoc(sourceId);
+  });
+  if ($("docClear")) $("docClear").onclick = run(async () => { await api("/wb/api/document/" + encodeURIComponent(sourceId), {method: "DELETE"}); showDoc(sourceId); });
+  $("docDetail").querySelectorAll("button[data-rel]").forEach(b => b.onclick = run(async () => { await api("/wb/api/relations/" + encodeURIComponent(b.dataset.rel), {method: "DELETE"}); showDoc(sourceId); }));
+  $("relLoad").onclick = run(async () => {
+    const id = ($("relBase").value.match(/doc:\d+/) || [])[0]; const base = catalog.find(c => c.instrument_id === id);
+    if (!base) { say("Contrato-base não encontrado no índice.", "error"); return; }
+    const b = await api("/wb/api/document/" + encodeURIComponent(base.source_id));
+    $("relAffected").innerHTML = b.units.map(u => `<option value="${esc(u.first_block)}">${esc(u.label)} — ${esc(u.text.slice(0, 70))}</option>`).join("");
+    $("relAffected").dataset.instrument = b.instrument_id;
+  });
+  $("relSave").onclick = run(async () => {
+    const values = (sel) => [...sel.selectedOptions].map(o => o.value);
+    if (!$("relAffected").dataset.instrument) { say("Carregue as cláusulas do contrato-base.", "error"); return; }
+    await api("/wb/api/relations", {method: "POST", body: {from_instrument_id: d.instrument_id, to_instrument_id: $("relAffected").dataset.instrument, relation_type: $("relType").value, affected_block_ids: values($("relAffected")), support_block_ids: values($("relSupport"))}});
+    say("Relação salva; entra na próxima publicação.", "ok"); showDoc(sourceId);
+  });
+  $("docDetail").querySelectorAll(".ref").forEach(box => box.querySelectorAll("button[data-act]").forEach(b => b.onclick = run(async () => {
+    const base = {source_id: sourceId, block_id: box.dataset.block, start: +box.dataset.start, end: +box.dataset.end, literal: box.dataset.literal};
+    if (b.dataset.act === "clear") await api("/wb/api/reference/clear", {method: "POST", body: {...base, kind: "unbound"}});
+    else await api("/wb/api/reference", {method: "POST", body: {...base, kind: b.dataset.act, target_block_ids: b.dataset.act === "bind" ? [box.querySelector("[data-target]").value] : []}});
+    showDoc(sourceId);
+  })));
+});
+
+// ---- Pendências ----
+const loadPending = run(async () => {
+  const p = await api("/wb/api/pending");
+  $("reservedList").innerHTML = p.reserved.map(r => `<tr><td>${esc(r.instrument_id)}</td><td>${esc((r.title || "").slice(0, 100))}</td><td>${r.has_decision ? '<span class="pill st-answered">partes informadas</span>' : '<span class="pill st-abstained">sem partes</span>'}</td><td><button class="secondary" data-src="${esc(r.source_id)}" type="button">informar partes</button></td></tr>`).join("") || '<tr><td class="muted">Nenhum.</td></tr>';
+  $("reservedList").querySelectorAll("button").forEach(b => b.onclick = () => showReserved(b.dataset.src));
+  $("rejectedList").innerHTML = p.rejected.map(r => `<tr><td>${esc(r.instrument_id)}</td><td>${esc((r.title || "").slice(0, 70))}</td><td class="muted">${esc(r.reason)}</td></tr>`).join("") || '<tr><td class="muted">Nenhum.</td></tr>';
+  $("skippedList").innerHTML = p.skipped.map(r => `<tr><td>M-Files ${esc(r.mfiles_id)}</td><td class="muted">${esc(r.reason)} · ${esc(r.technical_status || "")}</td></tr>`).join("") || '<tr><td class="muted">Nenhum.</td></tr>';
+});
+const showReserved = run(async (sourceId) => {
+  const p = await api("/wb/api/preview/" + encodeURIComponent(sourceId));
+  const dec = p.decision || {};
+  $("reservedDetail").innerHTML = `<h4 style="font-size:14px">${esc(sourceId)}</h4><div class="grid2"><div><p class="muted">Início do documento:</p><pre class="answer" style="max-height:360px">${esc(p.blocks.join("\n\n"))}</pre></div>
+    <div><label class="block" for="resTitle">Título</label><input id="resTitle" type="text" value="${esc(dec.title || "")}"><h4 style="font-size:14px">Partes</h4>${partiesEditor(dec.parties || [{name: "", role: "contratante"}, {name: "", role: "contratada"}], "res")}<br><button class="primary" id="resSave" type="button">Salvar partes</button></div></div>`;
+  wireParties("res");
+  $("resSave").onclick = run(async () => {
+    const parties = readParties("res"); if (!parties.length) { say("Informe ao menos uma parte.", "error"); return; }
+    await api("/wb/api/document/" + encodeURIComponent(sourceId), {method: "POST", body: {title: $("resTitle").value.trim() || null, parties}});
+    say("Partes salvas; o documento entra na próxima publicação.", "ok"); loadPending();
+  });
+});
+
+// ---- Publicar ----
+const loadPublish = run(async () => {
+  const p = await api("/wb/api/publications");
+  const c = p.pending_changes; $("pubPending").textContent = `${c.document_decisions} documento(s), ${c.reference_decisions} referência(s), ${c.relation_decisions} relação(ões)`;
+  const running = p.publications.some(r => r.state === "running"); $("pubBtn").disabled = running;
+  $("pubList").innerHTML = p.publications.map(r => `<tr><td>${esc(r.created_at.slice(0, 16).replace("T", " "))}</td><td>${esc(r.name)}</td><td>${esc(r.reviewer)}</td><td>${esc(r.state)}</td><td class="muted">${r.report && r.report.eligible_sources ? `${r.report.eligible_sources} docs · ${r.report.units} cláusulas · ${r.report.relations} relações · ${(r.report.reserved || []).length} reservados` : esc((r.report || {}).error || "")}</td></tr>`).join("");
+  $("pubLog").textContent = p.log_tail || "";
+  if (running) setTimeout(loadPublish, 10000);
+});
+$("pubBtn").onclick = run(async () => {
+  if (!$("pubReason").value.trim()) { say("Informe o motivo.", "error"); return; }
+  if (!confirm("Publicar agora? O serviço ficará ~1 minuto fora do ar ao final.")) return;
+  await api("/wb/api/publish", {method: "POST", body: {reason: $("pubReason").value.trim(), strict: $("pubStrict").checked}});
+  say("Publicação iniciada.", "ok"); loadPublish();
+});
+
+if (localStorage.getItem("ragKey")) boot(); else say("Informe a chave e o seu nome e clique em Salvar.");
+</script>
+</body>
+</html>
